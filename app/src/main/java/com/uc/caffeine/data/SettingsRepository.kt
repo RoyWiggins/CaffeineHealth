@@ -29,6 +29,10 @@ object SettingsKeys {
     val ABSORPTION_RATE_MINUTES = intPreferencesKey("absorption_rate_minutes")
     val SLEEP_TIME_HOUR = intPreferencesKey("sleep_time_hour")
     val SLEEP_TIME_MINUTE = intPreferencesKey("sleep_time_minute")
+    val WITHDRAWAL_THRESHOLD_ENABLED = booleanPreferencesKey("withdrawal_threshold_enabled")
+    val WITHDRAWAL_THRESHOLD_MG = intPreferencesKey("withdrawal_threshold_mg")
+    val WAKE_TIME_HOUR = intPreferencesKey("wake_time_hour")
+    val WAKE_TIME_MINUTE = intPreferencesKey("wake_time_minute")
     val THEME_MODE = stringPreferencesKey("theme_mode")
     val USE_DYNAMIC_COLOR = booleanPreferencesKey("use_dynamic_color")
     val USE_24_HOUR_CLOCK = booleanPreferencesKey("use_24_hour_clock")
@@ -127,6 +131,35 @@ class SettingsRepository(private val context: Context) {
         context.dataStore.edit { prefs ->
             prefs[SettingsKeys.SLEEP_TIME_HOUR] = hour
             prefs[SettingsKeys.SLEEP_TIME_MINUTE] = minute
+        }
+    }
+
+    /**
+     * Enable or disable the morning withdrawal warning.
+     */
+    suspend fun updateWithdrawalThresholdEnabled(enabled: Boolean) {
+        context.dataStore.edit { prefs ->
+            prefs[SettingsKeys.WITHDRAWAL_THRESHOLD_ENABLED] = enabled
+        }
+    }
+
+    /**
+     * Update withdrawal threshold setting.
+     * @param mg Caffeine level in mg below which a morning withdrawal warning fires
+     */
+    suspend fun updateWithdrawalThreshold(mg: Int) {
+        context.dataStore.edit { prefs ->
+            prefs[SettingsKeys.WITHDRAWAL_THRESHOLD_MG] = mg
+        }
+    }
+
+    /**
+     * Update the designated wake-up time used by the withdrawal warning.
+     */
+    suspend fun updateWakeTime(hour: Int, minute: Int) {
+        context.dataStore.edit { prefs ->
+            prefs[SettingsKeys.WAKE_TIME_HOUR] = hour
+            prefs[SettingsKeys.WAKE_TIME_MINUTE] = minute
         }
     }
 
@@ -297,6 +330,10 @@ class SettingsRepository(private val context: Context) {
             prefs[SettingsKeys.ABSORPTION_RATE_MINUTES] = settings.absorptionRateMinutes
             prefs[SettingsKeys.SLEEP_TIME_HOUR] = settings.sleepTimeHour
             prefs[SettingsKeys.SLEEP_TIME_MINUTE] = settings.sleepTimeMinute
+            prefs[SettingsKeys.WITHDRAWAL_THRESHOLD_ENABLED] = settings.withdrawalThresholdEnabled
+            prefs[SettingsKeys.WITHDRAWAL_THRESHOLD_MG] = settings.withdrawalThresholdMg
+            prefs[SettingsKeys.WAKE_TIME_HOUR] = settings.wakeTimeHour
+            prefs[SettingsKeys.WAKE_TIME_MINUTE] = settings.wakeTimeMinute
             prefs[SettingsKeys.THEME_MODE] = settings.themeMode.name
             prefs[SettingsKeys.HOME_VIEW_MODE] = settings.homeViewMode.name
             prefs[SettingsKeys.COLOR_PALETTE] = settings.colorPalette.name
@@ -335,6 +372,10 @@ internal fun Preferences.toUserSettings(defaultSettings: UserSettings): UserSett
         absorptionRateMinutes = this[SettingsKeys.ABSORPTION_RATE_MINUTES] ?: defaultSettings.absorptionRateMinutes,
         sleepTimeHour = this[SettingsKeys.SLEEP_TIME_HOUR] ?: defaultSettings.sleepTimeHour,
         sleepTimeMinute = this[SettingsKeys.SLEEP_TIME_MINUTE] ?: defaultSettings.sleepTimeMinute,
+        withdrawalThresholdEnabled = this[SettingsKeys.WITHDRAWAL_THRESHOLD_ENABLED] ?: defaultSettings.withdrawalThresholdEnabled,
+        withdrawalThresholdMg = this[SettingsKeys.WITHDRAWAL_THRESHOLD_MG] ?: defaultSettings.withdrawalThresholdMg,
+        wakeTimeHour = this[SettingsKeys.WAKE_TIME_HOUR] ?: defaultSettings.wakeTimeHour,
+        wakeTimeMinute = this[SettingsKeys.WAKE_TIME_MINUTE] ?: defaultSettings.wakeTimeMinute,
         themeMode = ThemeMode.fromStorage(this[SettingsKeys.THEME_MODE]),
         useDynamicColor = this[SettingsKeys.USE_DYNAMIC_COLOR] ?: defaultSettings.useDynamicColor,
         use24HourClock = this[SettingsKeys.USE_24_HOUR_CLOCK] ?: defaultSettings.use24HourClock,

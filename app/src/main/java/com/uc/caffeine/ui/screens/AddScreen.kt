@@ -913,6 +913,7 @@ private fun CreateCustomDrinkSheet(
     var selectedCategory by remember { mutableStateOf("coffee") }
     var selectedUnitKey by remember { mutableStateOf("cup") }
     var caffeineText by remember { mutableStateOf("") }
+    var delayText by remember { mutableStateOf("") }
 
     val pickImage = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
         if (uri != null) {
@@ -924,6 +925,7 @@ private fun CreateCustomDrinkSheet(
     }
 
     val caffeineValue = caffeineText.toDoubleOrNull()
+    val delayMinutes = delayText.toIntOrNull()?.coerceAtLeast(0) ?: 0
     val isValid = name.isNotBlank() && caffeineValue != null && caffeineValue > 0
 
     val categoryKeys = CategoryUtils.getCategoryOrder()
@@ -1080,6 +1082,13 @@ private fun CreateCustomDrinkSheet(
             )
         }
 
+        HorizontalDivider()
+
+        ReleaseDelayField(
+            delayText = delayText,
+            onDelayTextChange = { delayText = it },
+        )
+
         Button(
             onClick = {
                 val caffeine = caffeineValue ?: return@Button
@@ -1091,6 +1100,7 @@ private fun CreateCustomDrinkSheet(
                     category = selectedCategory,
                     unitKey = selectedUnitKey,
                     caffeineMg = caffeine,
+                    delayMinutes = delayMinutes,
                 )
                 onDismiss()
             },
@@ -1135,6 +1145,9 @@ private fun EditCustomDrinkSheet(
             }
         )
     }
+    var delayText by remember(preset.id) {
+        mutableStateOf(if (preset.delayMinutes > 0) preset.delayMinutes.toString() else "")
+    }
 
     val pickImage = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
         if (uri != null) {
@@ -1146,6 +1159,7 @@ private fun EditCustomDrinkSheet(
     }
 
     val caffeineValue = caffeineText.toDoubleOrNull()
+    val delayMinutes = delayText.toIntOrNull()?.coerceAtLeast(0) ?: 0
     val isValid = name.isNotBlank() && caffeineValue != null && caffeineValue > 0
 
     val categoryKeys = CategoryUtils.getCategoryOrder()
@@ -1191,6 +1205,7 @@ private fun EditCustomDrinkSheet(
                         category = selectedCategory,
                         unitKey = selectedUnitKey,
                         caffeineMg = caffeine,
+                        delayMinutes = delayMinutes,
                     )
                     onDone()
                 }
@@ -1331,7 +1346,41 @@ private fun EditCustomDrinkSheet(
             )
         }
 
+        HorizontalDivider()
+
+        ReleaseDelayField(
+            delayText = delayText,
+            onDelayTextChange = { delayText = it },
+        )
+
         Spacer(Modifier.height(8.dp))
+    }
+}
+
+@Composable
+private fun ReleaseDelayField(
+    delayText: String,
+    onDelayTextChange: (String) -> Unit,
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Text(
+            text = stringResource(R.string.custom_drink_release_delay),
+            style = MaterialTheme.typography.titleMedium,
+        )
+        Text(
+            text = stringResource(R.string.custom_drink_release_delay_description),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        OutlinedTextField(
+            value = delayText,
+            onValueChange = { onDelayTextChange(it.filter { c -> c.isDigit() }) },
+            label = { Text(stringResource(R.string.custom_drink_release_delay_label)) },
+            suffix = { Text(stringResource(R.string.custom_drink_release_delay_suffix)) },
+            singleLine = true,
+            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+            modifier = Modifier.fillMaxWidth(),
+        )
     }
 }
 

@@ -88,6 +88,7 @@ interface ConsumptionLogDao {
             c1.unitCaffeineMg,
             c1.imageName,
             c1.absorptionRate,
+            c1.delayMinutes,
             c1.durationMinutes,
             c1.startedAtMillis as lastUsed
         FROM consumption_log c1
@@ -118,6 +119,7 @@ interface ConsumptionLogDao {
             c1.unitCaffeineMg,
             c1.imageName,
             c1.absorptionRate,
+            c1.delayMinutes,
             c1.durationMinutes,
             c1.startedAtMillis as lastUsed
         FROM consumption_log c1

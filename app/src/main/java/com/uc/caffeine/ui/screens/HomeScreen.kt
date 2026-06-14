@@ -104,6 +104,7 @@ import com.uc.caffeine.util.resolvedZoneId
 import java.time.LocalDate
 import java.util.Locale
 import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -136,6 +137,7 @@ fun HomeScreen(
     val currentLevel by viewModel.currentCaffeineLevel.collectAsStateWithLifecycle()
     val liveNowMillis by viewModel.liveCurrentTimeMillis.collectAsStateWithLifecycle()
     val bedtimeForecast by viewModel.caffeineAtBedtime.collectAsStateWithLifecycle()
+    val wakeForecast by viewModel.caffeineAtWakeTime.collectAsStateWithLifecycle()
     val chartData by viewModel.chartData.collectAsStateWithLifecycle()
     val isConsumptionEntriesLoading by viewModel.isConsumptionEntriesLoading.collectAsStateWithLifecycle()
     val userSettings by viewModel.userSettings.collectAsStateWithLifecycle()
@@ -249,6 +251,18 @@ fun HomeScreen(
                     }
                 }
             }
+        }
+
+        val showWithdrawalWarning = userSettings.withdrawalThresholdEnabled &&
+            currentLevel > 0.0 &&
+            wakeForecast.first < userSettings.withdrawalThresholdMg
+        AnimatedVisibility(visible = showWithdrawalWarning) {
+            WithdrawalForecastCard(
+                caffeineAtWakeMg = wakeForecast.first,
+                wakeTimeMillis = wakeForecast.second,
+                userSettings = userSettings,
+                modifier = Modifier.padding(top = 16.dp),
+            )
         }
 
         Spacer(modifier = Modifier.height(16.dp))
@@ -541,6 +555,52 @@ private fun SleepForecastCard(
                     },
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onPrimaryContainer
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun WithdrawalForecastCard(
+    caffeineAtWakeMg: Double,
+    wakeTimeMillis: Long,
+    userSettings: UserSettings,
+    modifier: Modifier = Modifier,
+) {
+    ElevatedCard(
+        modifier = modifier.fillMaxWidth(),
+        colors = CardDefaults.elevatedCardColors(
+            containerColor = MaterialTheme.colorScheme.tertiaryContainer,
+        ),
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(16.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Icon(
+                imageVector = Icons.Default.Warning,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.onTertiaryContainer,
+            )
+            Spacer(modifier = Modifier.width(12.dp))
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = stringResource(R.string.withdrawal_forecast_title),
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.onTertiaryContainer,
+                )
+                Text(
+                    text = stringResource(
+                        R.string.withdrawal_forecast_warning,
+                        formatTimestampToTime(wakeTimeMillis, userSettings),
+                        caffeineAtWakeMg.toInt(),
+                        userSettings.withdrawalThresholdMg,
+                    ),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onTertiaryContainer,
                 )
             }
         }

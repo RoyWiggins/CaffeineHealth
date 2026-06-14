@@ -19,7 +19,7 @@ import kotlinx.coroutines.launch
 
 @Database(
     entities = [DrinkPreset::class, DrinkUnit::class, ConsumptionEntry::class],
-    version = 10,
+    version = 11,
     exportSchema = false
 )
 abstract class CaffeineDatabase : RoomDatabase() {
@@ -38,6 +38,13 @@ abstract class CaffeineDatabase : RoomDatabase() {
             }
         }
 
+        private val MIGRATION_10_11 = object : Migration(10, 11) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE drink_presets ADD COLUMN delayMinutes INTEGER NOT NULL DEFAULT 0")
+                db.execSQL("ALTER TABLE consumption_log ADD COLUMN delayMinutes INTEGER NOT NULL DEFAULT 0")
+            }
+        }
+
         fun getDatabase(context: Context): CaffeineDatabase {
             return INSTANCE ?: synchronized(this) {
                 val instance = Room.databaseBuilder(
@@ -45,7 +52,7 @@ abstract class CaffeineDatabase : RoomDatabase() {
                     CaffeineDatabase::class.java,
                     "caffeine_database"
                 )
-                    .addMigrations(MIGRATION_9_10)
+                    .addMigrations(MIGRATION_9_10, MIGRATION_10_11)
                     .addCallback(object : RoomDatabase.Callback() {
                         override fun onCreate(db: SupportSQLiteDatabase) {
                             super.onCreate(db)

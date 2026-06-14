@@ -31,4 +31,27 @@ class SettingsRepositoryMappingTest {
         assertEquals(30, mapped.sleepTimeMinute)
         assertTrue(mapped.isOnboardingComplete)
     }
+
+    @Test
+    fun withdrawalSettings_defaultWhenUnset_andRoundTripWhenSet() {
+        val defaults = UserSettings()
+
+        val unset = mutablePreferencesOf().toUserSettings(defaultSettings = defaults)
+        assertEquals(defaults.withdrawalThresholdEnabled, unset.withdrawalThresholdEnabled)
+        assertEquals(defaults.withdrawalThresholdMg, unset.withdrawalThresholdMg)
+        assertEquals(defaults.wakeTimeHour, unset.wakeTimeHour)
+        assertEquals(defaults.wakeTimeMinute, unset.wakeTimeMinute)
+
+        val prefs = mutablePreferencesOf()
+        prefs[SettingsKeys.WITHDRAWAL_THRESHOLD_ENABLED] = true
+        prefs[SettingsKeys.WITHDRAWAL_THRESHOLD_MG] = 45
+        prefs[SettingsKeys.WAKE_TIME_HOUR] = 6
+        prefs[SettingsKeys.WAKE_TIME_MINUTE] = 15
+
+        val mapped = prefs.toUserSettings(defaultSettings = defaults)
+        assertTrue(mapped.withdrawalThresholdEnabled)
+        assertEquals(45, mapped.withdrawalThresholdMg)
+        assertEquals(6, mapped.wakeTimeHour)
+        assertEquals(15, mapped.wakeTimeMinute)
+    }
 }

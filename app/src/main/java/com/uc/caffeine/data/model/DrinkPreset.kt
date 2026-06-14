@@ -16,6 +16,11 @@ data class DrinkPreset(
     val imageName: String = "",
     val emoji: String = "☕",
     val absorptionRate: Int = 45,
+
+    // Release delay in minutes before the caffeine starts entering the bloodstream.
+    // 0 for ordinary drinks; > 0 for delayed-release pills.
+    val delayMinutes: Int = 0,
+
     val relevance: Int = 0,
     val defaultUnit: String = "cup",
 

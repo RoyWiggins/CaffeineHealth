@@ -38,6 +38,12 @@ data class ConsumptionEntry(
     // Stored here (not FK) so historical data remains accurate even if preset changes
     val absorptionRate: Int = 45,
 
+    // Release delay in minutes — how long after consumption the caffeine actually
+    // starts entering the bloodstream. 0 for ordinary drinks; > 0 for delayed-release
+    // pills that only kick in some hours later. Stored here (not FK) so historical
+    // data stays accurate even if the preset changes.
+    val delayMinutes: Int = 0,
+
     // Start time for this consumption window.
     // This is the canonical timestamp used for sorting, grouping, and display.
     val startedAtMillis: Long = System.currentTimeMillis(),
@@ -54,4 +60,17 @@ data class ConsumptionEntry(
 
     val finishedAtMillis: Long
         get() = startedAtMillis + (normalizedDurationMinutes * MINUTE_IN_MILLIS)
+
+    /**
+     * When the caffeine actually begins entering the bloodstream, accounting for any
+     * delayed-release [delayMinutes]. Equal to [startedAtMillis] for ordinary drinks.
+     */
+    val effectiveStartMillis: Long
+        get() = startedAtMillis + (delayMinutes.coerceAtLeast(0) * MINUTE_IN_MILLIS)
+
+    /**
+     * When the (delayed) consumption window finishes — used for peak-time search bounds.
+     */
+    val effectiveFinishMillis: Long
+        get() = effectiveStartMillis + (normalizedDurationMinutes * MINUTE_IN_MILLIS)
 }

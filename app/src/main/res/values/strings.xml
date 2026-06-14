@@ -78,6 +78,9 @@
     <string name="profile_sleep_threshold">Sleep threshold</string>
     <string name="profile_sleep_threshold_value">%1$d mg</string>
     <string name="profile_sleep_threshold_description">The active-caffeine target the sleep guidance compares against.</string>
+    <string name="profile_withdrawal_threshold">Withdrawal threshold</string>
+    <string name="profile_withdrawal_threshold_value">%1$d mg</string>
+    <string name="profile_withdrawal_threshold_description">Warns you if your caffeine is likely to drop below this before your wake-up time.</string>
 
     <!-- Caffeine profile re-adjust card -->
     <string name="profile_re_adjust_title">Re-Adjust Caffeine Health Profile</string>
@@ -91,6 +94,12 @@
     <string name="profile_caffeine_half_life_hint">Adjust in 1-hour steps</string>
     <string name="profile_sleep_threshold_supporting">Keep this lower if caffeine affects your sleep easily, higher if your usual cutoff is more forgiving.</string>
     <string name="profile_sleep_threshold_hint">Adjust in 5 mg steps</string>
+    <string name="profile_withdrawal_enable">Withdrawal warning</string>
+    <string name="profile_withdrawal_enable_description">Warns you if your caffeine is set to bottom out before you wake up — handy if low morning caffeine gives you withdrawal headaches.</string>
+    <string name="profile_wake_time">Wake-up time</string>
+    <string name="profile_wake_time_hint">Used to project your morning caffeine level.</string>
+    <string name="profile_withdrawal_threshold_supporting">The active-caffeine level you want to still have on board when you wake up.</string>
+    <string name="profile_withdrawal_threshold_hint">Adjust in 5 mg steps</string>
     <string name="profile_health_section">Health Profile</string>
     <string name="profile_age_range">Age range</string>
     <string name="profile_age_range_description">Caffeine may linger longer for older adults.</string>
@@ -206,6 +215,10 @@
     <string name="sleep_forecast_may_affect">May affect sleep (%1$dmg at bedtime)</string>
     <string name="sleep_forecast_disruption">Sleep disruption likely (%1$dmg)</string>
 
+    <!-- Withdrawal forecast (HomeScreen card) -->
+    <string name="withdrawal_forecast_title">Morning withdrawal</string>
+    <string name="withdrawal_forecast_warning">By %1$s your caffeine is set to drop to ~%2$d mg — below your %3$d mg withdrawal threshold. You may wake up in withdrawal.</string>
+
     <!-- Add screen -->
     <string name="add_title">Add a drink</string>
     <string name="add_create_custom_cd">Create custom drink</string>
@@ -244,6 +257,10 @@
     <string name="custom_drink_serving_unit">Serving unit</string>
     <string name="custom_drink_caffeine_per_serving">Caffeine per serving</string>
     <string name="custom_drink_amount_label">Amount</string>
+    <string name="custom_drink_release_delay">Release delay</string>
+    <string name="custom_drink_release_delay_description">For delayed-release pills that only reach your bloodstream a while after you take them. Leave at 0 for ordinary drinks.</string>
+    <string name="custom_drink_release_delay_label">Delay</string>
+    <string name="custom_drink_release_delay_suffix">min</string>
     <string name="custom_drink_save">Save custom drink</string>
     <string name="custom_drink_edit_button">Edit custom drink</string>
 
@@ -495,6 +512,10 @@
     <string name="whats_new_analytics_body">Bedtime Impact now shows a full monthly calendar with streaks. When You Drink has cleaner bar charts with time-range filtering.</string>
     <string name="whats_new_languages_title">14 New Languages</string>
     <string name="whats_new_languages_body">Danish, Dutch, Finnish, French, German, Icelandic, Kannada, Malayalam, Norwegian, Portuguese, Spanish, Swedish, Tamil, and Telugu are now supported.</string>
+    <string name="whats_new_withdrawal_title">Withdrawal Warning</string>
+    <string name="whats_new_withdrawal_body">Set a withdrawal threshold and wake-up time, and get warned when your caffeine is set to bottom out before morning.</string>
+    <string name="whats_new_delay_title">Delayed-Release Drinks</string>
+    <string name="whats_new_delay_body">Custom drinks can now have a release delay, so timed-release caffeine pills enter your bloodstream at the right time.</string>
     <string name="whats_new_fixes_title">Fixes and Polish</string>
     <string name="whats_new_fixes_body">Health Connect sync is more reliable, with a handful of smaller refinements across the app.</string>
 

@@ -34,6 +34,7 @@ import com.uc.caffeine.util.CaffeineCalculator
 import com.uc.caffeine.util.AnalyticsRange
 import com.uc.caffeine.util.AnalyticsUiState
 import com.uc.caffeine.util.calculateNextBedtimeMillis
+import com.uc.caffeine.util.calculateNextWakeTimeMillis
 import com.uc.caffeine.util.calculateServingTotalCaffeine
 import com.uc.caffeine.util.buildAnalyticsUiState
 import com.uc.caffeine.util.CategoryUtils
@@ -339,6 +340,31 @@ class CaffeineViewModel(application: Application) : AndroidViewModel(application
         initialValue = Pair(0.0, System.currentTimeMillis())
     )
 
+    /**
+     * Predicts caffeine level at the user's designated wake-up time, for the morning
+     * withdrawal warning.
+     * Returns: Pair<caffeineLevelAtWake, wakeTimeMillis>
+     */
+    val caffeineAtWakeTime: StateFlow<Pair<Double, Long>> = combine(
+        allConsumptionEntries,
+        userSettings,
+        chartTickerFlow
+    ) { allEntries, settings, _ ->
+        val now = System.currentTimeMillis()
+        val wakeTime = calculateNextWakeTimeMillis(now, settings)
+        val caffeineLevel = CaffeineCalculator.calculateCurrentLevel(
+            entries = allEntries,
+            currentTimeMillis = wakeTime,
+            halfLifeMinutes = settings.effectiveHalfLifeMinutes
+        )
+        Pair(caffeineLevel, wakeTime)
+    }.flowOn(Dispatchers.Default)
+    .stateIn(
+        scope = viewModelScope,
+        started = SharingStarted.Eagerly,
+        initialValue = Pair(0.0, System.currentTimeMillis())
+    )
+
     // Time until peak absorption - shows when caffeine is still being absorbed
     val timeUntilPeak: StateFlow<Long?> = combine(
         allConsumptionEntries,
@@ -538,6 +564,7 @@ class CaffeineViewModel(application: Application) : AndroidViewModel(application
                 unitCaffeineMg = recent.unitCaffeineMg,
                 imageName  = recent.imageName,
                 absorptionRate = recent.absorptionRate,
+                delayMinutes = recent.delayMinutes,
                 startedAtMillis = System.currentTimeMillis(),
                 durationMinutes = recent.durationMinutes,
             )
@@ -710,6 +737,24 @@ class CaffeineViewModel(application: Application) : AndroidViewModel(application
     fun updateSleepThreshold(milligrams: Int) {
         viewModelScope.launch {
             settingsRepo.updateSleepThreshold(milligrams)
+        }
+    }
+
+    fun updateWithdrawalThresholdEnabled(enabled: Boolean) {
+        viewModelScope.launch {
+            settingsRepo.updateWithdrawalThresholdEnabled(enabled)
+        }
+    }
+
+    fun updateWithdrawalThreshold(milligrams: Int) {
+        viewModelScope.launch {
+            settingsRepo.updateWithdrawalThreshold(milligrams)
+        }
+    }
+
+    fun updateWakeTime(hour: Int, minute: Int) {
+        viewModelScope.launch {
+            settingsRepo.updateWakeTime(hour, minute)
         }
     }
 
@@ -1049,6 +1094,7 @@ class CaffeineViewModel(application: Application) : AndroidViewModel(application
         category: String,
         unitKey: String,
         caffeineMg: Double,
+        delayMinutes: Int = 0,
     ) {
         viewModelScope.launch {
             val preset = DrinkPreset(
@@ -1059,6 +1105,7 @@ class CaffeineViewModel(application: Application) : AndroidViewModel(application
                 category = category,
                 defaultUnit = unitKey,
                 defaultCaffeineMg = caffeineMg.toInt(),
+                delayMinutes = delayMinutes.coerceAtLeast(0),
                 isCustom = true,
                 relevance = 10000,
             )
@@ -1084,6 +1131,7 @@ class CaffeineViewModel(application: Application) : AndroidViewModel(application
         category: String,
         unitKey: String,
         caffeineMg: Double,
+        delayMinutes: Int = 0,
     ) {
         viewModelScope.launch {
             val updated = preset.copy(
@@ -1093,6 +1141,7 @@ class CaffeineViewModel(application: Application) : AndroidViewModel(application
                 category = category,
                 defaultUnit = unitKey,
                 defaultCaffeineMg = caffeineMg.toInt(),
+                delayMinutes = delayMinutes.coerceAtLeast(0),
             )
             presetDao.update(updated)
             unitDao.deleteUnitsForDrink(preset.id)
@@ -1127,6 +1176,7 @@ class CaffeineViewModel(application: Application) : AndroidViewModel(application
             unitCaffeineMg = unit.caffeineMg,
             imageName = preset.imageName,
             absorptionRate = preset.absorptionRate,
+            delayMinutes = preset.delayMinutes,
             startedAtMillis = startedAtMillis,
             durationMinutes = durationMinutes.coerceAtLeast(1),
         )

@@ -40,6 +40,7 @@ class BackupManager(
                 put("unitCaffeineMg", entry.unitCaffeineMg)
                 put("imageName", entry.imageName)
                 put("absorptionRate", entry.absorptionRate)
+                put("delayMinutes", entry.delayMinutes)
                 put("startedAtMillis", entry.startedAtMillis)
                 put("durationMinutes", entry.durationMinutes)
             })
@@ -52,6 +53,10 @@ class BackupManager(
             put("absorptionRateMinutes", settings.absorptionRateMinutes)
             put("sleepTimeHour", settings.sleepTimeHour)
             put("sleepTimeMinute", settings.sleepTimeMinute)
+            put("withdrawalThresholdEnabled", settings.withdrawalThresholdEnabled)
+            put("withdrawalThresholdMg", settings.withdrawalThresholdMg)
+            put("wakeTimeHour", settings.wakeTimeHour)
+            put("wakeTimeMinute", settings.wakeTimeMinute)
             put("themeMode", settings.themeMode.name)
             put("useDynamicColor", settings.useDynamicColor)
             put("use24HourClock", settings.use24HourClock)
@@ -91,6 +96,7 @@ class BackupManager(
                 put("imageName", preset.imageName)
                 put("emoji", preset.emoji)
                 put("absorptionRate", preset.absorptionRate)
+                put("delayMinutes", preset.delayMinutes)
                 put("relevance", preset.relevance)
                 put("defaultUnit", preset.defaultUnit)
                 put("defaultCaffeineMg", preset.defaultCaffeineMg)
@@ -143,6 +149,7 @@ class BackupManager(
                     unitCaffeineMg = obj.optDouble("unitCaffeineMg", 0.0),
                     imageName = obj.optString("imageName", ""),
                     absorptionRate = obj.optInt("absorptionRate", 45),
+                    delayMinutes = obj.optInt("delayMinutes", 0),
                     startedAtMillis = obj.getLong("startedAtMillis"),
                     durationMinutes = obj.optInt("durationMinutes", 10),
                 )
@@ -170,6 +177,10 @@ class BackupManager(
                 absorptionRateMinutes = settingsObj.optInt("absorptionRateMinutes", 45),
                 sleepTimeHour = settingsObj.optInt("sleepTimeHour", 23),
                 sleepTimeMinute = settingsObj.optInt("sleepTimeMinute", 0),
+                withdrawalThresholdEnabled = settingsObj.optBoolean("withdrawalThresholdEnabled", false),
+                withdrawalThresholdMg = settingsObj.optInt("withdrawalThresholdMg", 30),
+                wakeTimeHour = settingsObj.optInt("wakeTimeHour", 7),
+                wakeTimeMinute = settingsObj.optInt("wakeTimeMinute", 0),
                 themeMode = ThemeMode.fromStorage(settingsObj.optString("themeMode")),
                 useDynamicColor = settingsObj.optBoolean("useDynamicColor", true),
                 use24HourClock = settingsObj.optBoolean("use24HourClock", false),
@@ -213,6 +224,7 @@ class BackupManager(
                 imageName = obj.optString("imageName", ""),
                 emoji = obj.optString("emoji", "☕"),
                 absorptionRate = obj.optInt("absorptionRate", 45),
+                delayMinutes = obj.optInt("delayMinutes", 0),
                 relevance = obj.optInt("relevance", 0),
                 defaultUnit = obj.optString("defaultUnit", "cup"),
                 defaultCaffeineMg = obj.optInt("defaultCaffeineMg", 0),
