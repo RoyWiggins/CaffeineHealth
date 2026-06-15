@@ -219,6 +219,23 @@
     <string name="withdrawal_forecast_title">Morning withdrawal</string>
     <string name="withdrawal_forecast_warning">By %1$s your caffeine is set to drop to ~%2$d mg — below your %3$d mg withdrawal threshold. You may wake up in withdrawal.</string>
 
+    <!-- Headache tracking -->
+    <string name="headache_title">Headache</string>
+    <string name="headache_report_cd">Report a headache</string>
+    <string name="headache_report_title">Report a headache</string>
+    <string name="headache_when">When</string>
+    <string name="headache_severity">Severity</string>
+    <string name="headache_severity_mild">Mild</string>
+    <string name="headache_severity_moderate">Moderate</string>
+    <string name="headache_severity_severe">Severe</string>
+    <string name="headache_note_label">Note (optional)</string>
+    <string name="headache_save">Save headache</string>
+    <string name="headache_delete">Delete headache</string>
+    <string name="headache_inferred_caffeine">Caffeine at that time</string>
+    <string name="headache_meta">%1$s · %2$s</string>
+    <string name="headache_logged_toast">Headache logged</string>
+    <string name="headache_deleted_toast">Headache deleted</string>
+
     <!-- Add screen -->
     <string name="add_title">Add a drink</string>
     <string name="add_create_custom_cd">Create custom drink</string>
@@ -512,6 +529,8 @@
     <string name="whats_new_analytics_body">Bedtime Impact now shows a full monthly calendar with streaks. When You Drink has cleaner bar charts with time-range filtering.</string>
     <string name="whats_new_languages_title">14 New Languages</string>
     <string name="whats_new_languages_body">Danish, Dutch, Finnish, French, German, Icelandic, Kannada, Malayalam, Norwegian, Portuguese, Spanish, Swedish, Tamil, and Telugu are now supported.</string>
+    <string name="whats_new_headache_title">Headache Tracking</string>
+    <string name="whats_new_headache_body">Report headaches and see them on the caffeine chart and in your timeline, each tagged with the caffeine level inferred at that moment.</string>
     <string name="whats_new_withdrawal_title">Withdrawal Warning</string>
     <string name="whats_new_withdrawal_body">Set a withdrawal threshold and wake-up time, and get warned when your caffeine is set to bottom out before morning.</string>
     <string name="whats_new_delay_title">Delayed-Release Drinks</string>

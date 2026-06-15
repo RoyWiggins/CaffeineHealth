@@ -9,17 +9,19 @@ import androidx.sqlite.db.SupportSQLiteDatabase
 import com.uc.caffeine.data.dao.ConsumptionLogDao
 import com.uc.caffeine.data.dao.DrinkPresetDao
 import com.uc.caffeine.data.dao.DrinkUnitDao
+import com.uc.caffeine.data.dao.HeadacheLogDao
 import com.uc.caffeine.data.model.ConsumptionEntry
 import com.uc.caffeine.data.model.DrinkPreset
 import com.uc.caffeine.data.model.DrinkUnit
+import com.uc.caffeine.data.model.HeadacheEntry
 import com.uc.caffeine.data.model.defaultDrinkPresets
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 
 @Database(
-    entities = [DrinkPreset::class, DrinkUnit::class, ConsumptionEntry::class],
-    version = 11,
+    entities = [DrinkPreset::class, DrinkUnit::class, ConsumptionEntry::class, HeadacheEntry::class],
+    version = 12,
     exportSchema = false
 )
 abstract class CaffeineDatabase : RoomDatabase() {
@@ -27,6 +29,7 @@ abstract class CaffeineDatabase : RoomDatabase() {
     abstract fun drinkPresetDao(): DrinkPresetDao
     abstract fun drinkUnitDao(): DrinkUnitDao
     abstract fun consumptionLogDao(): ConsumptionLogDao
+    abstract fun headacheLogDao(): HeadacheLogDao
 
     companion object {
         @Volatile
@@ -45,6 +48,21 @@ abstract class CaffeineDatabase : RoomDatabase() {
             }
         }
 
+        private val MIGRATION_11_12 = object : Migration(11, 12) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS headache_log (
+                        id INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
+                        startedAtMillis INTEGER NOT NULL,
+                        severity INTEGER NOT NULL DEFAULT 2,
+                        note TEXT NOT NULL DEFAULT ''
+                    )
+                    """.trimIndent()
+                )
+            }
+        }
+
         fun getDatabase(context: Context): CaffeineDatabase {
             return INSTANCE ?: synchronized(this) {
                 val instance = Room.databaseBuilder(
@@ -52,7 +70,7 @@ abstract class CaffeineDatabase : RoomDatabase() {
                     CaffeineDatabase::class.java,
                     "caffeine_database"
                 )
-                    .addMigrations(MIGRATION_9_10, MIGRATION_10_11)
+                    .addMigrations(MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12)
                     .addCallback(object : RoomDatabase.Callback() {
                         override fun onCreate(db: SupportSQLiteDatabase) {
                             super.onCreate(db)

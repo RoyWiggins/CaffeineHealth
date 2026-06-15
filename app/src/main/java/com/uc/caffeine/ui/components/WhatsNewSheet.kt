@@ -20,6 +20,7 @@ import androidx.compose.material.icons.filled.Bolt
 import androidx.compose.material.icons.filled.DonutLarge
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.Schedule
+import androidx.compose.material.icons.filled.Sick
 import androidx.compose.material.icons.filled.Translate
 import androidx.compose.material3.BottomSheetDefaults
 import androidx.compose.material3.Button
@@ -56,6 +57,7 @@ private val features = listOf(
     FeatureItem(Icons.Filled.DonutLarge, R.string.whats_new_circular_title, R.string.whats_new_circular_body),
     FeatureItem(Icons.Filled.Bolt, R.string.whats_new_chart_title, R.string.whats_new_chart_body),
     FeatureItem(Icons.Filled.BarChart, R.string.whats_new_analytics_title, R.string.whats_new_analytics_body),
+    FeatureItem(Icons.Filled.Sick, R.string.whats_new_headache_title, R.string.whats_new_headache_body),
     FeatureItem(Icons.Filled.Alarm, R.string.whats_new_withdrawal_title, R.string.whats_new_withdrawal_body),
     FeatureItem(Icons.Filled.Schedule, R.string.whats_new_delay_title, R.string.whats_new_delay_body),
     FeatureItem(Icons.Filled.Translate, R.string.whats_new_languages_title, R.string.whats_new_languages_body),

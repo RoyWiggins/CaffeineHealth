@@ -29,6 +29,7 @@ import com.uc.caffeine.data.model.ConsumptionEntry
 import com.uc.caffeine.data.model.DEFAULT_CONSUMPTION_DURATION_MINUTES
 import com.uc.caffeine.data.model.DrinkPreset
 import com.uc.caffeine.data.model.DrinkUnit
+import com.uc.caffeine.data.model.HeadacheEntry
 import com.uc.caffeine.data.model.RecentDrink
 import com.uc.caffeine.util.CaffeineCalculator
 import com.uc.caffeine.util.AnalyticsRange
@@ -41,6 +42,8 @@ import com.uc.caffeine.util.CategoryUtils
 import com.uc.caffeine.util.ChartData
 import com.uc.caffeine.util.ChartDataGenerator
 import com.uc.caffeine.util.ConsumptionContributionDetail
+import com.uc.caffeine.util.HomeTimelineItem
+import com.uc.caffeine.util.buildHomeTimeline
 import com.uc.caffeine.util.groupConsumptionEntriesByLocalDate
 import com.uc.caffeine.util.nextStartOfDayMillis
 import com.uc.caffeine.util.resolvedZoneId
@@ -85,10 +88,11 @@ class CaffeineViewModel(application: Application) : AndroidViewModel(application
     private val presetDao = db.drinkPresetDao()
     private val unitDao   = db.drinkUnitDao()
     private val logDao    = db.consumptionLogDao()
+    private val headacheDao = db.headacheLogDao()
     private val settingsRepo = SettingsRepository(application)
     val healthConnectManager = HealthConnectManager(application)
 
-    private val backupManager = com.uc.caffeine.data.BackupManager(logDao, presetDao, unitDao, settingsRepo)
+    private val backupManager = com.uc.caffeine.data.BackupManager(logDao, presetDao, unitDao, headacheDao, settingsRepo)
 
     private val _myDataState = MutableStateFlow<MyDataUiState>(MyDataUiState.Idle)
     val myDataState: StateFlow<MyDataUiState> = _myDataState.asStateFlow()
@@ -165,6 +169,7 @@ class CaffeineViewModel(application: Application) : AndroidViewModel(application
 
     private val allDrinkPresets = presetDao.getAllPresets()
     private val allConsumptionEntries = logDao.getAllEntries()
+    private val allHeadaches = headacheDao.getAll()
 
     val isDrinkCatalogLoading: StateFlow<Boolean> = allDrinkPresets
         .map { false }
@@ -413,16 +418,34 @@ class CaffeineViewModel(application: Application) : AndroidViewModel(application
         initialValue = CaffeineTrend.STEADY,
     )
 
+    // Merged drink + headache timeline for the Home screen, grouped by day.
+    // Each headache carries the caffeine level inferred at the time it occurred.
+    val homeTimeline: StateFlow<Map<LocalDate, List<HomeTimelineItem>>> = combine(
+        allConsumptionEntries,
+        allHeadaches,
+        userSettings,
+    ) { entries, headaches, settings ->
+        buildHomeTimeline(entries, headaches, settings)
+    }
+        .flowOn(Dispatchers.Default)
+        .stateIn(
+            scope = viewModelScope,
+            started = SharingStarted.WhileSubscribed(5_000),
+            initialValue = emptyMap()
+        )
+
     // Reactive all-history caffeine curve data for charting
     val chartData: StateFlow<ChartData> = combine(
         allConsumptionEntries,
         chartTickerFlow,
-        userSettings
-    ) { entries, currentTime, settings ->
+        userSettings,
+        allHeadaches,
+    ) { entries, currentTime, settings, headaches ->
         ChartDataGenerator.generateChartData(
             entries = entries,
             settings = settings,
-            currentTime = currentTime
+            currentTime = currentTime,
+            headaches = headaches,
         )
     }.flowOn(Dispatchers.Default)
     .stateIn(
@@ -666,6 +689,34 @@ class CaffeineViewModel(application: Application) : AndroidViewModel(application
             if (settings.healthConnectEnabled) {
                 runCatching { healthConnectManager.deleteEntry(entry) }
             }
+        }
+    }
+
+    fun reportHeadache(startedAtMillis: Long, severity: Int, note: String) {
+        viewModelScope.launch {
+            headacheDao.insert(
+                HeadacheEntry(
+                    startedAtMillis = startedAtMillis,
+                    severity = severity,
+                    note = note.trim(),
+                )
+            )
+            homeScreenEventsChannel.send(
+                HomeScreenUiEvent.LogActionCompleted(
+                    getApplication<Application>().getString(R.string.headache_logged_toast)
+                )
+            )
+        }
+    }
+
+    fun deleteHeadache(entry: HeadacheEntry) {
+        viewModelScope.launch {
+            headacheDao.deleteById(entry.id)
+            homeScreenEventsChannel.send(
+                HomeScreenUiEvent.LogActionCompleted(
+                    getApplication<Application>().getString(R.string.headache_deleted_toast)
+                )
+            )
         }
     }
 

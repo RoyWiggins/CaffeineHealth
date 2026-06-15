@@ -26,6 +26,7 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.IntOffset
 import com.uc.caffeine.util.ChartConsumptionMarker
+import com.uc.caffeine.util.ChartHeadacheMarker
 import com.uc.caffeine.util.ChartMarkerEntry
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
@@ -192,6 +193,7 @@ fun CaffeineChart(
     predictedBedtimeCaffeineLevel: Double,
     modifier: Modifier = Modifier,
     onEntryClick: ((entryId: Int) -> Unit)? = null,
+    onHeadacheClick: ((headacheId: Int) -> Unit)? = null,
 ) {
     val colorScheme = MaterialTheme.colorScheme
     val displaySeries = remember(chartData, liveNowMillis) {
@@ -333,6 +335,7 @@ fun CaffeineChart(
     )
 
     val markerPositions = remember { mutableMapOf<Double, Offset>() }
+    val headacheMarkerPositions = remember { mutableMapOf<Int, Offset>() }
     var selectedMarker by remember { mutableStateOf<ChartConsumptionMarker?>(null) }
     var popupOffset by remember { mutableStateOf(Offset.Zero) }
 
@@ -358,6 +361,20 @@ fun CaffeineChart(
             textColor = badgeTextColor,
         ) { xValue, canvasOffset ->
             markerPositions[xValue] = Offset(canvasOffset.x + chartInsetPx, canvasOffset.y + chartInsetPx)
+        }
+    }
+
+    val headacheRingColor = MaterialTheme.colorScheme.error.toArgb()
+    val headacheFillColor = MaterialTheme.colorScheme.errorContainer.toArgb()
+    val headacheDecoration = remember(chartData.headacheMarkers, yAxisMax, headacheRingColor, headacheFillColor) {
+        HeadacheMarkerDecoration(
+            markers = chartData.headacheMarkers,
+            yMin = 0.0,
+            yMax = yAxisMax,
+            fillColor = headacheFillColor,
+            ringColor = headacheRingColor,
+        ) { headacheId, canvasOffset ->
+            headacheMarkerPositions[headacheId] = Offset(canvasOffset.x + chartInsetPx, canvasOffset.y + chartInsetPx)
         }
     }
 
@@ -388,6 +405,7 @@ fun CaffeineChart(
             thresholdDecoration,
             currentTimeDecoration,
             consumptionDecoration,
+            headacheDecoration,
         ) + bedtimeDecorations,
     )
 
@@ -472,8 +490,19 @@ fun CaffeineChart(
     Box(
         modifier = modifier
             .fillMaxSize()
-            .pointerInput(chartData.consumptionMarkers, hitRadiusPx) {
+            .pointerInput(chartData.consumptionMarkers, chartData.headacheMarkers, hitRadiusPx) {
                 detectTapGestures { tap ->
+                    val hitHeadache = chartData.headacheMarkers.firstOrNull { marker ->
+                        val pos = headacheMarkerPositions[marker.headacheId] ?: return@firstOrNull false
+                        val dx = tap.x - pos.x
+                        val dy = tap.y - pos.y
+                        dx * dx + dy * dy < hitRadiusPx * hitRadiusPx
+                    }
+                    if (hitHeadache != null) {
+                        selectedMarker = null
+                        onHeadacheClick?.invoke(hitHeadache.headacheId)
+                        return@detectTapGestures
+                    }
                     val hitMarker = chartData.consumptionMarkers.firstOrNull { marker ->
                         val pos = markerPositions[marker.xValue] ?: return@firstOrNull false
                         val dx = tap.x - pos.x
@@ -1316,6 +1345,77 @@ private class ConsumptionImageDecoration(
                 }
 
                 onPositionDrawn(marker.xValue, Offset(canvasX, imageCenterY))
+            }
+
+            canvas.nativeCanvas.restore()
+        }
+    }
+}
+
+private class HeadacheMarkerDecoration(
+    private val markers: List<ChartHeadacheMarker>,
+    private val yMin: Double,
+    private val yMax: Double,
+    private val fillColor: Int,
+    private val ringColor: Int,
+    private val onPositionDrawn: (headacheId: Int, center: Offset) -> Unit,
+) : Decoration {
+    private fun CartesianDrawingContext.yToCanvas(yValue: Double): Float {
+        if (yMax <= yMin) return layerBounds.bottom
+        val fraction = ((yValue - yMin) / (yMax - yMin)).coerceIn(0.0, 1.0).toFloat()
+        return layerBounds.bottom - fraction * (layerBounds.bottom - layerBounds.top)
+    }
+
+    private val fillPaint = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply {
+        style = android.graphics.Paint.Style.FILL
+    }
+    private val ringPaint = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply {
+        style = android.graphics.Paint.Style.STROKE
+    }
+    private val emojiPaint = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply {
+        textAlign = android.graphics.Paint.Align.CENTER
+    }
+
+    override fun drawOverLayers(context: CartesianDrawingContext) {
+        with(context) {
+            if (layerDimensions.xSpacing == 0f || ranges.xStep == 0.0) return
+
+            val imageRadius = MarkerImageRadius.pixels
+            val dotRadius = MarkerDotRadius.pixels
+            val gap = MarkerImageGap.pixels
+            ringPaint.strokeWidth = 1.5.dp.pixels
+            emojiPaint.textSize = 13.dp.pixels
+
+            canvas.nativeCanvas.save()
+            canvas.nativeCanvas.clipRect(
+                layerBounds.left,
+                layerBounds.top - imageRadius * 2 - gap,
+                layerBounds.right,
+                layerBounds.bottom + dotRadius * 2,
+            )
+
+            for (marker in markers) {
+                val canvasX = xToCanvas(marker.xValue)
+                if (canvasX < layerBounds.left - imageRadius * 2 || canvasX > layerBounds.right + imageRadius * 2) continue
+
+                // Place headache icons below the curve point so they don't collide
+                // with the drink icons that sit above it.
+                val canvasY = yToCanvas(marker.yValue)
+                val imageCenterY = canvasY + gap + imageRadius
+
+                fillPaint.color = fillColor
+                canvas.nativeCanvas.drawCircle(canvasX, imageCenterY, imageRadius, fillPaint)
+
+                val yOff = (emojiPaint.descent() + emojiPaint.ascent()) / 2f
+                canvas.nativeCanvas.drawText("🤕", canvasX, imageCenterY - yOff, emojiPaint)
+
+                ringPaint.color = ringColor
+                canvas.nativeCanvas.drawCircle(canvasX, imageCenterY, imageRadius, ringPaint)
+
+                fillPaint.color = ringColor
+                canvas.nativeCanvas.drawCircle(canvasX, canvasY, dotRadius, fillPaint)
+
+                onPositionDrawn(marker.headacheId, Offset(canvasX, imageCenterY))
             }
 
             canvas.nativeCanvas.restore()

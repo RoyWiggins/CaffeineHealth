@@ -27,9 +27,14 @@ import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.DonutLarge
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.automirrored.filled.ShowChart
+import androidx.compose.material.icons.filled.Sick
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.ButtonGroupDefaults
+import androidx.compose.material3.Button
 import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.BottomSheetDefaults
 import androidx.compose.material3.CardDefaults
@@ -74,12 +79,15 @@ import com.uc.caffeine.R
 import com.uc.caffeine.data.HomeViewMode
 import com.uc.caffeine.data.UserSettings
 import com.uc.caffeine.data.model.ConsumptionEntry
+import com.uc.caffeine.data.model.HeadacheEntry
+import com.uc.caffeine.data.model.HeadacheSeverity
 import com.uc.caffeine.data.model.DrinkUnit
 import com.uc.caffeine.ui.components.CaffeineChart
 import com.uc.caffeine.ui.components.CaffeineCircularView
 import com.uc.caffeine.ui.components.CaffeineScreenScaffold
 import com.uc.caffeine.ui.components.ConsumptionContributionChart
 import com.uc.caffeine.ui.components.ConsumptionTimingSection
+import com.uc.caffeine.ui.components.DateTimePickerDialog
 import com.uc.caffeine.ui.components.DrinkIcon
 import com.uc.caffeine.ui.components.ExpressiveIconBadge
 import com.uc.caffeine.ui.components.RollingNumberText
@@ -99,7 +107,9 @@ import com.uc.caffeine.util.formatConsumptionDateHeader
 import com.uc.caffeine.util.formatDurationMinutes
 import com.uc.caffeine.util.formatServingSummary
 import com.uc.caffeine.util.formatTimeOfDay
+import com.uc.caffeine.util.formatTimestampToDateTime
 import com.uc.caffeine.util.formatTimestampToTime
+import com.uc.caffeine.util.HomeTimelineItem
 import com.uc.caffeine.util.resolvedZoneId
 import java.time.LocalDate
 import java.util.Locale
@@ -142,10 +152,13 @@ fun HomeScreen(
     val isConsumptionEntriesLoading by viewModel.isConsumptionEntriesLoading.collectAsStateWithLifecycle()
     val userSettings by viewModel.userSettings.collectAsStateWithLifecycle()
     val groupedConsumptionEntries by viewModel.groupedConsumptionEntries.collectAsStateWithLifecycle()
+    val homeTimeline by viewModel.homeTimeline.collectAsStateWithLifecycle()
     val showWhatsNew by viewModel.showWhatsNew.collectAsStateWithLifecycle()
     val caffeineTrend by viewModel.caffeineTrend.collectAsStateWithLifecycle()
 
     var selectedEntry by remember { mutableStateOf<ConsumptionEntry?>(null) }
+    var selectedHeadache by remember { mutableStateOf<HomeTimelineItem.Headache?>(null) }
+    var showReportHeadache by remember { mutableStateOf(false) }
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     val haptics = rememberAppHaptics()
 
@@ -171,6 +184,13 @@ fun HomeScreen(
     CaffeineScreenScaffold(
         title = stringResource(R.string.home_title),
         actions = {
+            IconButton(onClick = { haptics.toggle(); showReportHeadache = true }) {
+                Icon(
+                    imageVector = Icons.Filled.Sick,
+                    contentDescription = stringResource(R.string.headache_report_cd),
+                    modifier = Modifier.size(20.dp),
+                )
+            }
             val modes = HomeViewMode.entries
             modes.forEachIndexed { index, mode ->
                 ToggleButton(
@@ -239,7 +259,17 @@ fun HomeScreen(
                                         haptics.navigation()
                                         selectedEntry = entry
                                     }
-                                }
+                                },
+                                onHeadacheClick = { headacheId ->
+                                    val item = homeTimeline.values
+                                        .flatten()
+                                        .filterIsInstance<HomeTimelineItem.Headache>()
+                                        .find { it.entry.id == headacheId }
+                                    if (item != null) {
+                                        haptics.navigation()
+                                        selectedHeadache = item
+                                    }
+                                },
                             )
                             HomeViewMode.CIRCULAR -> CaffeineCircularView(
                                 currentMg = currentLevel,
@@ -299,7 +329,7 @@ fun HomeScreen(
                         }
                     }
                 }
-            } else if (groupedConsumptionEntries.isEmpty()) {
+            } else if (homeTimeline.isEmpty()) {
                 item(key = "history-empty") {
                     Text(
                         text = stringResource(R.string.home_no_consumptions),
@@ -311,7 +341,7 @@ fun HomeScreen(
                     )
                 }
             } else {
-                groupedConsumptionEntries.entries.forEachIndexed { index, (date, entriesForDay) ->
+                homeTimeline.entries.forEachIndexed { index, (date, itemsForDay) ->
                     if (index > 0) {
                         item(
                             key = "history-gap-$date",
@@ -339,27 +369,43 @@ fun HomeScreen(
                         }
                     }
 
-                    entriesForDay.forEachIndexed { entryIndex, entry ->
+                    itemsForDay.forEachIndexed { itemIndex, timelineItem ->
                         item(
-                            key = "history-entry-${entry.id}",
+                            key = when (timelineItem) {
+                                is HomeTimelineItem.Drink -> "history-drink-${timelineItem.entry.id}"
+                                is HomeTimelineItem.Headache -> "history-headache-${timelineItem.entry.id}"
+                            },
                             contentType = "history-entry",
                         ) {
-                            ConsumptionHistoryListItem(
-                                entry = entry,
-                                index = entryIndex,
-                                count = entriesForDay.size,
-                                userSettings = userSettings,
-                                onClick = {
-                                    haptics.navigation()
-                                    selectedEntry = entry
-                                },
-                                modifier = Modifier.heightIn(min = 65.dp),
-                            )
+                            when (timelineItem) {
+                                is HomeTimelineItem.Drink -> ConsumptionHistoryListItem(
+                                    entry = timelineItem.entry,
+                                    index = itemIndex,
+                                    count = itemsForDay.size,
+                                    userSettings = userSettings,
+                                    onClick = {
+                                        haptics.navigation()
+                                        selectedEntry = timelineItem.entry
+                                    },
+                                    modifier = Modifier.heightIn(min = 65.dp),
+                                )
+                                is HomeTimelineItem.Headache -> HeadacheHistoryListItem(
+                                    item = timelineItem,
+                                    index = itemIndex,
+                                    count = itemsForDay.size,
+                                    userSettings = userSettings,
+                                    onClick = {
+                                        haptics.navigation()
+                                        selectedHeadache = timelineItem
+                                    },
+                                    modifier = Modifier.heightIn(min = 65.dp),
+                                )
+                            }
                         }
 
-                        if (entryIndex < entriesForDay.lastIndex) {
+                        if (itemIndex < itemsForDay.lastIndex) {
                             item(
-                                key = "history-entry-gap-${entry.id}",
+                                key = "history-item-gap-$date-$itemIndex",
                                 contentType = "history-entry-gap",
                             ) {
                                 Spacer(modifier = Modifier.height(6.dp))
@@ -441,8 +487,305 @@ fun HomeScreen(
         }
     }
 
+    if (showReportHeadache) {
+        ModalBottomSheet(
+            onDismissRequest = { showReportHeadache = false },
+            dragHandle = { BottomSheetDefaults.DragHandle() },
+        ) {
+            ReportHeadacheSheet(
+                userSettings = userSettings,
+                onSubmit = { startedAtMillis, severity, note ->
+                    viewModel.reportHeadache(startedAtMillis, severity, note)
+                    showReportHeadache = false
+                },
+            )
+        }
+    }
+
+    selectedHeadache?.let { headache ->
+        ModalBottomSheet(
+            onDismissRequest = { selectedHeadache = null },
+            dragHandle = { BottomSheetDefaults.DragHandle() },
+        ) {
+            HeadacheDetailSheet(
+                item = headache,
+                userSettings = userSettings,
+                onDelete = {
+                    viewModel.deleteHeadache(headache.entry)
+                    selectedHeadache = null
+                },
+            )
+        }
+    }
+
     if (showWhatsNew) {
         WhatsNewSheet(onDismiss = { viewModel.markWhatsNewSeen() })
+    }
+}
+
+@Composable
+private fun headacheSeverityLabel(severity: HeadacheSeverity): String = when (severity) {
+    HeadacheSeverity.MILD -> stringResource(R.string.headache_severity_mild)
+    HeadacheSeverity.MODERATE -> stringResource(R.string.headache_severity_moderate)
+    HeadacheSeverity.SEVERE -> stringResource(R.string.headache_severity_severe)
+}
+
+@OptIn(ExperimentalMaterial3ExpressiveApi::class)
+@Composable
+private fun HeadacheHistoryListItem(
+    item: HomeTimelineItem.Headache,
+    index: Int,
+    count: Int,
+    userSettings: UserSettings,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    SegmentedListItem(
+        modifier = modifier,
+        onClick = onClick,
+        leadingContent = {
+            ExpressiveIconBadge(
+                index = index,
+                size = 44.dp,
+            ) {
+                Text(
+                    text = "🤕",
+                    style = MaterialTheme.typography.titleLarge,
+                )
+            }
+        },
+        content = {
+            Text(
+                text = stringResource(R.string.headache_title),
+                style = MaterialTheme.typography.bodyLarge,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+        },
+        supportingContent = {
+            val severity = HeadacheSeverity.fromLevel(item.entry.severity)
+            Text(
+                text = stringResource(
+                    R.string.headache_meta,
+                    formatTimestampToTime(item.entry.startedAtMillis, userSettings),
+                    headacheSeverityLabel(severity),
+                ),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+        },
+        trailingContent = {
+            Text(
+                text = stringResource(R.string.caffeine_mg_compact, item.inferredCaffeineMg.toInt()),
+                style = MaterialTheme.typography.titleMedium,
+                color = MaterialTheme.colorScheme.error,
+                fontWeight = FontWeight.Bold,
+            )
+        },
+        shapes = segmentedListItemShapes(index, count),
+        colors = ListItemDefaults.colors(
+            containerColor = CaffeineSurfaceDefaults.groupedListContainerColor,
+        ),
+    )
+}
+
+@Composable
+private fun ReportHeadacheSheet(
+    userSettings: UserSettings,
+    onSubmit: (startedAtMillis: Long, severity: Int, note: String) -> Unit,
+) {
+    val haptics = rememberAppHaptics()
+    var startedAtMillis by remember { mutableStateOf(System.currentTimeMillis()) }
+    var severity by remember { mutableStateOf(HeadacheSeverity.MODERATE) }
+    var note by remember { mutableStateOf("") }
+    var showTimePicker by remember { mutableStateOf(false) }
+
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 20.dp, vertical = 4.dp),
+        verticalArrangement = Arrangement.spacedBy(20.dp),
+    ) {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            Text(text = "🤕", style = MaterialTheme.typography.headlineMedium)
+            Text(
+                text = stringResource(R.string.headache_report_title),
+                style = MaterialTheme.typography.headlineSmall,
+            )
+        }
+
+        HorizontalDivider()
+
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(
+                text = stringResource(R.string.headache_when),
+                style = MaterialTheme.typography.titleMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            OutlinedButton(onClick = { showTimePicker = true }) {
+                Text(formatTimestampToDateTime(startedAtMillis, userSettings))
+            }
+        }
+
+        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text(
+                text = stringResource(R.string.headache_severity),
+                style = MaterialTheme.typography.titleMedium,
+            )
+            val severities = HeadacheSeverity.entries
+            Row(horizontalArrangement = Arrangement.spacedBy(ButtonGroupDefaults.ConnectedSpaceBetween)) {
+                severities.forEachIndexed { index, option ->
+                    ToggleButton(
+                        checked = severity == option,
+                        onCheckedChange = { if (it) { haptics.toggle(); severity = option } },
+                        modifier = Modifier.weight(1f),
+                        shapes = when (index) {
+                            0 -> ButtonGroupDefaults.connectedLeadingButtonShapes()
+                            severities.lastIndex -> ButtonGroupDefaults.connectedTrailingButtonShapes()
+                            else -> ButtonGroupDefaults.connectedMiddleButtonShapes()
+                        },
+                    ) {
+                        Text(
+                            text = headacheSeverityLabel(option),
+                            style = MaterialTheme.typography.labelLarge,
+                        )
+                    }
+                }
+            }
+        }
+
+        OutlinedTextField(
+            value = note,
+            onValueChange = { note = it },
+            label = { Text(stringResource(R.string.headache_note_label)) },
+            modifier = Modifier.fillMaxWidth(),
+        )
+
+        Button(
+            onClick = {
+                haptics.confirm()
+                onSubmit(startedAtMillis, severity.level, note)
+            },
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(56.dp),
+        ) {
+            Text(stringResource(R.string.headache_save))
+        }
+
+        Spacer(Modifier.height(8.dp))
+    }
+
+    if (showTimePicker) {
+        DateTimePickerDialog(
+            currentTimestampMillis = startedAtMillis,
+            settings = userSettings,
+            onDateTimeSelected = {
+                startedAtMillis = it
+                showTimePicker = false
+            },
+            onDismiss = { showTimePicker = false },
+        )
+    }
+}
+
+@Composable
+private fun HeadacheDetailSheet(
+    item: HomeTimelineItem.Headache,
+    userSettings: UserSettings,
+    onDelete: () -> Unit,
+) {
+    val severity = HeadacheSeverity.fromLevel(item.entry.severity)
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 20.dp, vertical = 4.dp),
+        verticalArrangement = Arrangement.spacedBy(16.dp),
+    ) {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            Text(text = "🤕", style = MaterialTheme.typography.headlineMedium)
+            Column {
+                Text(
+                    text = stringResource(R.string.headache_title),
+                    style = MaterialTheme.typography.titleLarge,
+                )
+                Text(
+                    text = formatTimestampToDateTime(item.entry.startedAtMillis, userSettings),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        }
+
+        HorizontalDivider()
+
+        HeadacheDetailRow(
+            label = stringResource(R.string.headache_inferred_caffeine),
+            value = stringResource(R.string.caffeine_mg, item.inferredCaffeineMg.toInt()),
+            valueColor = MaterialTheme.colorScheme.error,
+        )
+        HeadacheDetailRow(
+            label = stringResource(R.string.headache_severity),
+            value = headacheSeverityLabel(severity),
+        )
+        if (item.entry.note.isNotBlank()) {
+            HeadacheDetailRow(
+                label = stringResource(R.string.headache_note_label),
+                value = item.entry.note,
+            )
+        }
+
+        OutlinedButton(
+            onClick = onDelete,
+            modifier = Modifier.fillMaxWidth(),
+        ) {
+            Icon(
+                imageVector = Icons.Filled.Delete,
+                contentDescription = null,
+                modifier = Modifier.size(18.dp),
+            )
+            Spacer(Modifier.size(8.dp))
+            Text(stringResource(R.string.headache_delete))
+        }
+
+        Spacer(Modifier.height(8.dp))
+    }
+}
+
+@Composable
+private fun HeadacheDetailRow(
+    label: String,
+    value: String,
+    valueColor: Color = MaterialTheme.colorScheme.onSurface,
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(
+            text = label,
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        Text(
+            text = value,
+            style = MaterialTheme.typography.titleMedium,
+            color = valueColor,
+            fontWeight = FontWeight.SemiBold,
+        )
     }
 }
 

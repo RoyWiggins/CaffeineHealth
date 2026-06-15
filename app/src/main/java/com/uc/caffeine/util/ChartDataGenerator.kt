@@ -1,6 +1,7 @@
 package com.uc.caffeine.util
 
 import com.uc.caffeine.data.model.ConsumptionEntry
+import com.uc.caffeine.data.model.HeadacheEntry
 import com.uc.caffeine.data.UserSettings
 import kotlin.math.abs
 import kotlin.math.max
@@ -57,7 +58,8 @@ object ChartDataGenerator {
     fun generateChartData(
         entries: List<ConsumptionEntry>,
         settings: UserSettings,
-        currentTime: Long = System.currentTimeMillis()
+        currentTime: Long = System.currentTimeMillis(),
+        headaches: List<HeadacheEntry> = emptyList(),
     ): ChartData {
         val bedtime = calculateNextBedtimeMillis(currentTime, settings)
         val baselineReturnTime = predictFutureBaselineReturnTime(
@@ -105,11 +107,47 @@ object ChartDataGenerator {
                 currentTime = currentTime,
                 dataPoints = dataPoints,
             ),
+            headacheMarkers = buildHeadacheMarkers(
+                headaches = headaches,
+                entries = entries,
+                domainStartTime = domainStartTime,
+                endTime = endTime,
+                halfLifeMinutes = settings.effectiveHalfLifeMinutes,
+            ),
             thresholdLevel = settings.sleepThresholdMg.toDouble(),
             bedtimeMillis = bedtime,
             currentTimeMillis = currentTime,
             domainStartMillis = domainStartTime,
         )
+    }
+
+    private fun buildHeadacheMarkers(
+        headaches: List<HeadacheEntry>,
+        entries: List<ConsumptionEntry>,
+        domainStartTime: Long,
+        endTime: Long,
+        halfLifeMinutes: Int,
+    ): List<ChartHeadacheMarker> {
+        return headaches
+            .asSequence()
+            .filter { it.startedAtMillis in domainStartTime..endTime }
+            .map { headache ->
+                val inferred = CaffeineCalculator.calculateCurrentLevel(
+                    entries = entries,
+                    currentTimeMillis = headache.startedAtMillis,
+                    halfLifeMinutes = halfLifeMinutes,
+                )
+                ChartHeadacheMarker(
+                    xValue = timestampToDomainX(domainStartTime, headache.startedAtMillis),
+                    yValue = toDisplayCaffeineLevel(inferred, hasEntries = entries.isNotEmpty()),
+                    headacheId = headache.id,
+                    severity = headache.severity,
+                    inferredCaffeineMg = inferred,
+                    timestampMillis = headache.startedAtMillis,
+                )
+            }
+            .sortedBy { it.xValue }
+            .toList()
     }
 
     private fun predictFutureBaselineReturnTime(
@@ -494,10 +532,20 @@ data class CaffeineDataPoint(
 data class ChartData(
     val dataPoints: List<CaffeineDataPoint>,
     val consumptionMarkers: List<ChartConsumptionMarker>,
+    val headacheMarkers: List<ChartHeadacheMarker> = emptyList(),
     val thresholdLevel: Double,
     val bedtimeMillis: Long,
     val currentTimeMillis: Long,
     val domainStartMillis: Long,
+)
+
+data class ChartHeadacheMarker(
+    val xValue: Double,
+    val yValue: Double,
+    val headacheId: Int,
+    val severity: Int,
+    val inferredCaffeineMg: Double,
+    val timestampMillis: Long,
 )
 
 data class ChartMarkerEntry(

@@ -3,9 +3,11 @@ package com.uc.caffeine.data
 import com.uc.caffeine.data.dao.ConsumptionLogDao
 import com.uc.caffeine.data.dao.DrinkPresetDao
 import com.uc.caffeine.data.dao.DrinkUnitDao
+import com.uc.caffeine.data.dao.HeadacheLogDao
 import com.uc.caffeine.data.model.ConsumptionEntry
 import com.uc.caffeine.data.model.DrinkPreset
 import com.uc.caffeine.data.model.DrinkUnit
+import com.uc.caffeine.data.model.HeadacheEntry
 import org.json.JSONArray
 import org.json.JSONObject
 import java.time.DayOfWeek
@@ -18,6 +20,7 @@ class BackupManager(
     private val logDao: ConsumptionLogDao,
     private val presetDao: DrinkPresetDao,
     private val unitDao: DrinkUnitDao,
+    private val headacheDao: HeadacheLogDao,
     private val settingsRepo: SettingsRepository,
 ) {
     suspend fun createBackup(settings: UserSettings): String {
@@ -46,6 +49,16 @@ class BackupManager(
             })
         }
         root.put("consumptionLog", logArray)
+
+        val headacheArray = JSONArray()
+        for (headache in headacheDao.getAllOnce()) {
+            headacheArray.put(JSONObject().apply {
+                put("startedAtMillis", headache.startedAtMillis)
+                put("severity", headache.severity)
+                put("note", headache.note)
+            })
+        }
+        root.put("headacheLog", headacheArray)
 
         val settingsObj = JSONObject().apply {
             put("halfLifeMinutes", settings.halfLifeMinutes)
@@ -127,6 +140,7 @@ class BackupManager(
         if (mode == ImportMode.REPLACE) {
             logDao.deleteAll()
             presetDao.deleteCustomPresets()
+            headacheDao.deleteAll()
         }
 
         val existingKeys = if (mode == ImportMode.MERGE) {
@@ -152,6 +166,24 @@ class BackupManager(
                     delayMinutes = obj.optInt("delayMinutes", 0),
                     startedAtMillis = obj.getLong("startedAtMillis"),
                     durationMinutes = obj.optInt("durationMinutes", 10),
+                )
+            )
+        }
+
+        val existingHeadacheKeys = if (mode == ImportMode.MERGE) {
+            headacheDao.getAllOnce().map { it.startedAtMillis }.toSet()
+        } else emptySet()
+
+        val headacheArray = root.optJSONArray("headacheLog") ?: JSONArray()
+        for (i in 0 until headacheArray.length()) {
+            val obj = headacheArray.getJSONObject(i)
+            val startedAtMillis = obj.getLong("startedAtMillis")
+            if (startedAtMillis in existingHeadacheKeys) continue
+            headacheDao.insert(
+                HeadacheEntry(
+                    startedAtMillis = startedAtMillis,
+                    severity = obj.optInt("severity", 2),
+                    note = obj.optString("note", ""),
                 )
             )
         }
