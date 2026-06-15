@@ -71,6 +71,7 @@ class BackupManager(
             put("wakeTimeHour", settings.wakeTimeHour)
             put("wakeTimeMinute", settings.wakeTimeMinute)
             put("themeMode", settings.themeMode.name)
+            put("chartLogScale", settings.chartLogScale)
             put("useDynamicColor", settings.useDynamicColor)
             put("use24HourClock", settings.use24HourClock)
             put("dateFormat", settings.dateFormat.name)
@@ -214,6 +215,7 @@ class BackupManager(
                 wakeTimeHour = settingsObj.optInt("wakeTimeHour", 7),
                 wakeTimeMinute = settingsObj.optInt("wakeTimeMinute", 0),
                 themeMode = ThemeMode.fromStorage(settingsObj.optString("themeMode")),
+                chartLogScale = settingsObj.optBoolean("chartLogScale", false),
                 useDynamicColor = settingsObj.optBoolean("useDynamicColor", true),
                 use24HourClock = settingsObj.optBoolean("use24HourClock", false),
                 dateFormat = AppDateFormat.fromStorage(settingsObj.optString("dateFormat")),

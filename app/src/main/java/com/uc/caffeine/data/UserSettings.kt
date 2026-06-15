@@ -196,6 +196,12 @@ data class UserSettings(
     val whatsNewLastSeenVersion: Int = 0,
     val homeViewMode: HomeViewMode = HomeViewMode.GRAPH,
     val colorPalette: AppColorPalette = AppColorPalette.DYNAMIC,
+
+    /**
+     * Whether the Home caffeine chart uses a logarithmic Y axis. Useful for
+     * seeing low residual caffeine levels that a linear scale flattens to zero.
+     */
+    val chartLogScale: Boolean = false,
     val weeklySleepRotaEnabled: Boolean = false,
     val weeklySleepRota: Map<DayOfWeek, LocalTime> = emptyMap(),
 ) {

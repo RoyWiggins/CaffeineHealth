@@ -110,6 +110,7 @@ fun SettingsScreen(
                         onThemeModeChange = viewModel::updateThemeMode,
                         onHomeViewModeChange = viewModel::updateHomeViewMode,
                         onColorPaletteChange = viewModel::updateColorPalette,
+                        onChartLogScaleChange = viewModel::updateChartLogScale,
                         onBack = { nestedBackStack.removeLastOrNull() },
                     )
 

@@ -53,6 +53,7 @@ object SettingsKeys {
     val WHATS_NEW_LAST_SEEN_VERSION = intPreferencesKey("whats_new_last_seen_version")
     val HOME_VIEW_MODE = stringPreferencesKey("home_view_mode")
     val COLOR_PALETTE = stringPreferencesKey("color_palette")
+    val CHART_LOG_SCALE = booleanPreferencesKey("chart_log_scale")
     val WEEKLY_SLEEP_ROTA_ENABLED = booleanPreferencesKey("weekly_sleep_rota_enabled")
     val WEEKLY_SLEEP_ROTA = stringSetPreferencesKey("weekly_sleep_rota")
 
@@ -184,6 +185,12 @@ class SettingsRepository(private val context: Context) {
     suspend fun updateColorPalette(palette: AppColorPalette) {
         context.dataStore.edit { prefs ->
             prefs[SettingsKeys.COLOR_PALETTE] = palette.name
+        }
+    }
+
+    suspend fun updateChartLogScale(enabled: Boolean) {
+        context.dataStore.edit { prefs ->
+            prefs[SettingsKeys.CHART_LOG_SCALE] = enabled
         }
     }
 
@@ -337,6 +344,7 @@ class SettingsRepository(private val context: Context) {
             prefs[SettingsKeys.THEME_MODE] = settings.themeMode.name
             prefs[SettingsKeys.HOME_VIEW_MODE] = settings.homeViewMode.name
             prefs[SettingsKeys.COLOR_PALETTE] = settings.colorPalette.name
+            prefs[SettingsKeys.CHART_LOG_SCALE] = settings.chartLogScale
             prefs[SettingsKeys.USE_DYNAMIC_COLOR] = settings.useDynamicColor
             prefs[SettingsKeys.USE_24_HOUR_CLOCK] = settings.use24HourClock
             prefs[SettingsKeys.DATE_FORMAT] = settings.dateFormat.name
@@ -394,6 +402,7 @@ internal fun Preferences.toUserSettings(defaultSettings: UserSettings): UserSett
         inactivityReminderEnabled = this[SettingsKeys.INACTIVITY_REMINDER_ENABLED] ?: true,
         dailyReminderTimes = this[SettingsKeys.DAILY_REMINDER_TIMES] ?: setOf("11:00", "14:00"),
         whatsNewLastSeenVersion = this[SettingsKeys.WHATS_NEW_LAST_SEEN_VERSION] ?: 0,
+        chartLogScale = this[SettingsKeys.CHART_LOG_SCALE] ?: defaultSettings.chartLogScale,
         homeViewMode = HomeViewMode.fromStorage(this[SettingsKeys.HOME_VIEW_MODE]),
         colorPalette = this[SettingsKeys.COLOR_PALETTE]?.let { AppColorPalette.fromStorage(it) }
             ?: if (this[SettingsKeys.USE_DYNAMIC_COLOR] != false) AppColorPalette.DYNAMIC

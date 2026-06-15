@@ -833,6 +833,12 @@ class CaffeineViewModel(application: Application) : AndroidViewModel(application
         }
     }
 
+    fun updateChartLogScale(enabled: Boolean) {
+        viewModelScope.launch {
+            settingsRepo.updateChartLogScale(enabled)
+        }
+    }
+
     fun updateUse24HourClock(enabled: Boolean) {
         viewModelScope.launch {
             settingsRepo.updateUse24HourClock(enabled)

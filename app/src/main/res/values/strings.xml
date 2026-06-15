@@ -557,6 +557,10 @@
     <string name="appearance_home_view_summary">Choose how caffeine is shown on the home screen</string>
     <string name="appearance_home_view_graph">Graph</string>
     <string name="appearance_home_view_circular">Circular</string>
+    <string name="appearance_chart_scale_label">Chart Y-axis scale</string>
+    <string name="appearance_chart_scale_description">Logarithmic makes small residual caffeine levels easier to read.</string>
+    <string name="appearance_chart_scale_linear">Linear</string>
+    <string name="appearance_chart_scale_logarithmic">Logarithmic</string>
     <string name="appearance_color_palette_label">Color palette</string>
     <string name="appearance_color_palette_dynamic">Dynamic</string>
     <string name="appearance_color_palette_espresso">Espresso</string>

@@ -114,7 +114,9 @@ import java.time.ZonedDateTime
 import java.time.format.DateTimeFormatter
 import java.time.temporal.ChronoUnit
 import java.util.Locale
+import kotlin.math.log10
 import kotlin.math.max
+import kotlin.math.pow
 import kotlin.math.min
 import kotlin.math.roundToInt
 import kotlin.math.roundToLong
@@ -176,6 +178,14 @@ internal fun buildHomeChartDisplaySeries(
     )
 }
 
+// Log-scale Y-axis mapping. log10(1 + v) keeps 0 anchored at the baseline
+// (so the area fill still reaches the axis) while spreading out small values.
+internal fun caffeineToAxisSpace(value: Double, logScale: Boolean): Double =
+    if (logScale) log10(1.0 + value.coerceAtLeast(0.0)) else value
+
+internal fun axisSpaceToCaffeine(axisValue: Double, logScale: Boolean): Double =
+    if (logScale) (10.0).pow(axisValue) - 1.0 else axisValue
+
 private fun CartesianDrawingContext.xToCanvas(xValue: Double): Float {
     val fullRangeStart = ranges.minX - layerDimensions.startPadding / layerDimensions.xSpacing * ranges.xStep
     val offsetPx = ((xValue - fullRangeStart) / ranges.xStep).toFloat() * layerDimensions.xSpacing
@@ -206,12 +216,24 @@ fun CaffeineChart(
         displaySeries.yValues.maxOrNull() ?: 0.0
     }
 
+    val logScale = userSettings.chartLogScale
+
     val yAxisStep = remember(maxCaffeine) {
         maxOf(100.0, kotlin.math.ceil(maxCaffeine / 3.0 / 100.0) * 100.0)
     }
-    
+
     val yAxisMax = remember(yAxisStep) {
         yAxisStep * 4.0
+    }
+
+    // The axis is plotted in "axis space" (identity for linear, log10(1+v) for
+    // log). All Y positions — the line series, range, ticks, threshold line, and
+    // marker placement — must be expressed in this same space to stay aligned.
+    val axisMaxY = remember(yAxisMax, logScale) {
+        if (logScale) caffeineToAxisSpace(yAxisMax, true) else yAxisMax
+    }
+    val axisStepY = remember(axisMaxY, yAxisStep, logScale) {
+        if (logScale) axisMaxY / (VERTICAL_AXIS_LABEL_COUNT - 1) else yAxisStep
     }
 
     val dataMinX = remember(displaySeries.xValues) {
@@ -227,12 +249,12 @@ fun CaffeineChart(
         dataMaxX + TIMELINE_SCROLL_BUFFER_UNITS
     }
 
-    val rangeProvider = remember(bufferedMinX, bufferedMaxX, yAxisMax) {
+    val rangeProvider = remember(bufferedMinX, bufferedMaxX, axisMaxY) {
         CartesianLayerRangeProvider.fixed(
             minX = bufferedMinX,
             maxX = bufferedMaxX,
             minY = 0.0,
-            maxY = yAxisMax
+            maxY = axisMaxY
         )
     }
 
@@ -243,20 +265,24 @@ fun CaffeineChart(
     // line-series x-values and the axis x-range are never from different
     // snapshots of chartData, which previously caused one-frame visual
     // glitches ("broken" look) whenever domainStartMillis shifted.
+    val seriesYValues = remember(displaySeries.yValues, logScale) {
+        if (logScale) displaySeries.yValues.map { caffeineToAxisSpace(it, true) }
+        else displaySeries.yValues
+    }
     var isModelReady by remember { mutableStateOf(false) }
-    LaunchedEffect(displaySeries.xValues, displaySeries.yValues) {
+    LaunchedEffect(displaySeries.xValues, seriesYValues) {
         if (displaySeries.xValues.isNotEmpty()) {
             modelProducer.runTransaction {
                 lineSeries {
-                    series(displaySeries.xValues, displaySeries.yValues)
+                    series(displaySeries.xValues, seriesYValues)
                 }
             }
         }
         isModelReady = true
     }
 
-    val yAxisItemPlacer = remember(yAxisStep) {
-        VerticalAxis.ItemPlacer.step(step = { yAxisStep })
+    val yAxisItemPlacer = remember(axisStepY) {
+        VerticalAxis.ItemPlacer.step(step = { axisStepY })
     }
 
     val bottomAxisFormatter = rememberTimelineAxisValueFormatter(
@@ -268,9 +294,10 @@ fun CaffeineChart(
         spacing = TIMELINE_AXIS_SPACING_UNITS,
         userSettings = userSettings,
     )
-    val yAxisFormatter = remember {
+    val yAxisFormatter = remember(logScale) {
         CartesianValueFormatter { _, value, _ ->
-            if (value.roundToInt() == 0) "\u200B" else "${value.roundToInt()}"
+            val realValue = axisSpaceToCaffeine(value, logScale)
+            if (realValue.roundToInt() <= 0) "\u200B" else "${realValue.roundToInt()}"
         }
     }
     val labelStyle = MaterialTheme.typography.labelSmall.copy(
@@ -306,7 +333,7 @@ fun CaffeineChart(
         LineCartesianLayer.LineProvider.series(line)
     }
     val thresholdDecoration = rememberThresholdLineDecoration(
-        thresholdLevel = chartData.thresholdLevel,
+        thresholdLevel = caffeineToAxisSpace(chartData.thresholdLevel, logScale),
         label = "Sleep threshold"
     )
     val currentTimeX = remember(displaySeries.currentTimeX) {
@@ -348,12 +375,24 @@ fun CaffeineChart(
     val density = LocalDensity.current
     val chartInsetPx = with(density) { 4.dp.toPx() }
 
-    val consumptionDecoration = remember(chartData.consumptionMarkers, yAxisMax, containerColor, strokeColor, dotColor, badgeColor, badgeTextColor) {
+    // Markers store caffeine values; map them into axis space so they sit on the
+    // (possibly logarithmic) curve. xValue / headacheId are unchanged, so the
+    // tap hit-testing keyed on those still lines up.
+    val displayConsumptionMarkers = remember(chartData.consumptionMarkers, logScale) {
+        if (!logScale) chartData.consumptionMarkers
+        else chartData.consumptionMarkers.map { it.copy(yValue = caffeineToAxisSpace(it.yValue, true)) }
+    }
+    val displayHeadacheMarkers = remember(chartData.headacheMarkers, logScale) {
+        if (!logScale) chartData.headacheMarkers
+        else chartData.headacheMarkers.map { it.copy(yValue = caffeineToAxisSpace(it.yValue, true)) }
+    }
+
+    val consumptionDecoration = remember(displayConsumptionMarkers, axisMaxY, containerColor, strokeColor, dotColor, badgeColor, badgeTextColor) {
         ConsumptionImageDecoration(
-            markers = chartData.consumptionMarkers,
+            markers = displayConsumptionMarkers,
             appContext = context,
             yMin = 0.0,
-            yMax = yAxisMax,
+            yMax = axisMaxY,
             containerColor = containerColor,
             strokeColor = strokeColor,
             dotColor = dotColor,
@@ -366,11 +405,11 @@ fun CaffeineChart(
 
     val headacheRingColor = MaterialTheme.colorScheme.error.toArgb()
     val headacheFillColor = MaterialTheme.colorScheme.errorContainer.toArgb()
-    val headacheDecoration = remember(chartData.headacheMarkers, yAxisMax, headacheRingColor, headacheFillColor) {
+    val headacheDecoration = remember(displayHeadacheMarkers, axisMaxY, headacheRingColor, headacheFillColor) {
         HeadacheMarkerDecoration(
-            markers = chartData.headacheMarkers,
+            markers = displayHeadacheMarkers,
             yMin = 0.0,
-            yMax = yAxisMax,
+            yMax = axisMaxY,
             fillColor = headacheFillColor,
             ringColor = headacheRingColor,
         ) { headacheId, canvasOffset ->
