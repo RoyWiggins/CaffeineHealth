@@ -43,7 +43,9 @@ import com.uc.caffeine.util.ChartData
 import com.uc.caffeine.util.ChartDataGenerator
 import com.uc.caffeine.util.ConsumptionContributionDetail
 import com.uc.caffeine.util.HomeTimelineItem
+import com.uc.caffeine.util.RadialCaffeineData
 import com.uc.caffeine.util.buildHomeTimeline
+import com.uc.caffeine.util.buildRadialCaffeineData
 import com.uc.caffeine.util.groupConsumptionEntriesByLocalDate
 import com.uc.caffeine.util.nextStartOfDayMillis
 import com.uc.caffeine.util.resolvedZoneId
@@ -477,6 +479,25 @@ class CaffeineViewModel(application: Application) : AndroidViewModel(application
             currentTime = System.currentTimeMillis()
         )
     )
+
+    // Last-7-days radial view data. Only computed while the circular view is the
+    // active Home view mode, to avoid the per-sample cost in graph mode.
+    val radialCaffeineData: StateFlow<RadialCaffeineData> = combine(
+        allConsumptionEntries,
+        chartTickerFlow,
+        userSettings,
+    ) { entries, currentTime, settings ->
+        if (settings.homeViewMode != com.uc.caffeine.data.HomeViewMode.CIRCULAR) {
+            RadialCaffeineData.EMPTY
+        } else {
+            buildRadialCaffeineData(entries = entries, settings = settings, nowMillis = currentTime)
+        }
+    }.flowOn(Dispatchers.Default)
+        .stateIn(
+            scope = viewModelScope,
+            started = SharingStarted.WhileSubscribed(5_000),
+            initialValue = RadialCaffeineData.EMPTY,
+        )
 
     val analyticsUiState: StateFlow<AnalyticsUiState> = combine(
         allConsumptionEntries,

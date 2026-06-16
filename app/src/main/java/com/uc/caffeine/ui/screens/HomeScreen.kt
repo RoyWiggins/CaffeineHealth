@@ -86,7 +86,7 @@ import com.uc.caffeine.data.model.HeadacheEntry
 import com.uc.caffeine.data.model.HeadacheSeverity
 import com.uc.caffeine.data.model.DrinkUnit
 import com.uc.caffeine.ui.components.CaffeineChart
-import com.uc.caffeine.ui.components.CaffeineCircularView
+import com.uc.caffeine.ui.components.CaffeineRadialView
 import com.uc.caffeine.ui.components.CaffeineScreenScaffold
 import com.uc.caffeine.ui.components.ConsumptionContributionChart
 import com.uc.caffeine.ui.components.ConsumptionTimingSection
@@ -100,7 +100,6 @@ import com.uc.caffeine.ui.components.rememberAppHaptics
 import com.uc.caffeine.ui.components.WhatsNewSheet
 import com.uc.caffeine.ui.components.shimmerEffect
 import com.uc.caffeine.ui.theme.CaffeineSurfaceDefaults
-import com.uc.caffeine.ui.viewmodel.CaffeineTrend
 import com.uc.caffeine.ui.viewmodel.CaffeineViewModel
 import com.uc.caffeine.ui.viewmodel.HomeScreenUiEvent
 import com.uc.caffeine.util.ConsumptionContributionDetail
@@ -157,7 +156,7 @@ fun HomeScreen(
     val groupedConsumptionEntries by viewModel.groupedConsumptionEntries.collectAsStateWithLifecycle()
     val homeTimeline by viewModel.homeTimeline.collectAsStateWithLifecycle()
     val showWhatsNew by viewModel.showWhatsNew.collectAsStateWithLifecycle()
-    val caffeineTrend by viewModel.caffeineTrend.collectAsStateWithLifecycle()
+    val radialData by viewModel.radialCaffeineData.collectAsStateWithLifecycle()
 
     var selectedEntry by remember { mutableStateOf<ConsumptionEntry?>(null) }
     var selectedHeadache by remember { mutableStateOf<HomeTimelineItem.Headache?>(null) }
@@ -274,10 +273,10 @@ fun HomeScreen(
                                     }
                                 },
                             )
-                            HomeViewMode.CIRCULAR -> CaffeineCircularView(
-                                currentMg = currentLevel,
-                                maxMg = userSettings.sleepThresholdMg.toDouble(),
-                                trend = caffeineTrend,
+                            HomeViewMode.CIRCULAR -> CaffeineRadialView(
+                                data = radialData,
+                                userSettings = userSettings,
+                                nowMillis = liveNowMillis,
                                 modifier = Modifier.fillMaxSize(),
                             )
                         }
