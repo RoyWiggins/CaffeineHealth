@@ -41,6 +41,18 @@ interface DrinkPresetDao {
     @Update
     suspend fun update(preset: DrinkPreset)
 
+    @Query("UPDATE drink_presets SET isFavorite = :isFavorite WHERE id = :id")
+    suspend fun setFavorite(id: Int, isFavorite: Boolean)
+
+    @Query("UPDATE drink_presets SET isFavorite = 1 WHERE itemId = :itemId")
+    suspend fun markFavoriteByItemId(itemId: String)
+
+    @Query("SELECT itemId FROM drink_presets WHERE isFavorite = 1 AND itemId != ''")
+    suspend fun getFavoriteItemIds(): List<String>
+
+    @Query("UPDATE drink_presets SET isFavorite = 0")
+    suspend fun clearAllFavorites()
+
     @Query("DELETE FROM drink_presets WHERE isCustom = 1")
     suspend fun deleteCustomPresets()
 }

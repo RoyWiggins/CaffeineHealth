@@ -28,7 +28,10 @@ data class DrinkPreset(
     // The full per-unit values live in drink_units table
     val defaultCaffeineMg: Int = 0,
 
-    val isCustom: Boolean = false
+    val isCustom: Boolean = false,
+
+    // User-pinned favorite — surfaced above recent servings on the Add screen.
+    val isFavorite: Boolean = false
 )
 
 val defaultDrinkPresets = listOf(

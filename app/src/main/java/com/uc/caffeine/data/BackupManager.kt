@@ -130,6 +130,8 @@ class BackupManager(
         }
         root.put("customDrinks", customArray)
 
+        root.put("favoriteItemIds", JSONArray(presetDao.getFavoriteItemIds()))
+
         return root.toString(2)
     }
 
@@ -142,6 +144,7 @@ class BackupManager(
             logDao.deleteAll()
             presetDao.deleteCustomPresets()
             headacheDao.deleteAll()
+            presetDao.clearAllFavorites()
         }
 
         val existingKeys = if (mode == ImportMode.MERGE) {
@@ -279,6 +282,12 @@ class BackupManager(
                     )
                 )
             }
+        }
+
+        val favoriteArray = root.optJSONArray("favoriteItemIds") ?: JSONArray()
+        for (i in 0 until favoriteArray.length()) {
+            val itemId = favoriteArray.optString(i, "")
+            if (itemId.isNotBlank()) presetDao.markFavoriteByItemId(itemId)
         }
     }
 }

@@ -244,6 +244,9 @@
     <string name="add_clear_search_cd">Clear search</string>
     <string name="add_filter_all">All</string>
     <string name="add_recent_servings">Recent servings</string>
+    <string name="add_favorites">Favorites</string>
+    <string name="favorite_add_cd">Add to favorites</string>
+    <string name="favorite_remove_cd">Remove from favorites</string>
     <string name="add_logged_toast">Logged %1$s</string>
     <string name="add_log_serving_of">Log %1$s of</string>
     <string name="add_no_serving_options">No serving options are available for this drink yet.</string>
@@ -315,6 +318,12 @@
     <string name="analytics_caffeine_by_source_summary">Where your caffeine came from over this period.</string>
     <string name="analytics_bedtime_impact">Bedtime impact</string>
     <string name="analytics_bedtime_impact_summary">How much caffeine is still active by the time you sleep.</string>
+    <string name="analytics_last_7_days_title">Last 7 days</string>
+    <string name="analytics_withdrawal_impact">Withdrawal impact</string>
+    <string name="analytics_withdrawal_impact_summary">Daily caffeine lows, threshold dips, and headaches.</string>
+    <string name="analytics_withdrawal_threshold_label">Withdrawal threshold: %1$d mg</string>
+    <string name="analytics_withdrawal_disabled">Withdrawal warning is off — turn it on in your Caffeine Profile to flag low days.</string>
+    <string name="analytics_withdrawal_summary">%1$d days below threshold · %2$d days with a headache</string>
     <string name="analytics_bedtime_card_supporting">Average caffeine still active by bedtime for each period.</string>
     <string name="analytics_bedtime_calendar_prev_month">Previous month</string>
     <string name="analytics_bedtime_calendar_next_month">Next month</string>

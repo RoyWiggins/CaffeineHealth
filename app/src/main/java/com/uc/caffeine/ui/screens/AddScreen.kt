@@ -122,6 +122,8 @@ import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.togetherWith
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.Star
+import androidx.compose.material.icons.outlined.StarBorder
 import androidx.compose.material3.IconButton
 
 @OptIn(ExperimentalMaterial3ExpressiveApi::class, ExperimentalMaterial3Api::class)
@@ -137,6 +139,7 @@ fun AddScreen(
 
     val groupedDrinks by viewModel.groupedDrinkPresets.collectAsStateWithLifecycle()
     val recentDrinks by viewModel.recentDrinks.collectAsStateWithLifecycle()
+    val favoriteDrinks by viewModel.favoriteDrinks.collectAsStateWithLifecycle()
     val isCatalogLoading by viewModel.isDrinkCatalogLoading.collectAsStateWithLifecycle()
     val selectedFilter by viewModel.selectedCategoryFilter.collectAsStateWithLifecycle()
     val searchQuery by viewModel.searchQuery.collectAsStateWithLifecycle()
@@ -146,6 +149,7 @@ fun AddScreen(
         groupedDrinks.entries.toList()
     }
     val showRecentServings = selectedFilter == null && searchQuery.isBlank() && recentDrinks.isNotEmpty()
+    val showFavorites = selectedFilter == null && searchQuery.isBlank() && favoriteDrinks.isNotEmpty()
     val categories = viewModel.getAvailableCategories()
     val focusManager = LocalFocusManager.current
     val listState = rememberLazyListState()
@@ -285,6 +289,66 @@ fun AddScreen(
         }
 
         Spacer(modifier = Modifier.height(16.dp))
+
+        if (showFavorites) {
+            Text(
+                text = stringResource(R.string.add_favorites),
+                style = MaterialTheme.typography.titleMedium,
+                color = MaterialTheme.colorScheme.primary,
+            )
+
+            Spacer(modifier = Modifier.height(8.dp))
+
+            SegmentedListGroup(
+                items = favoriteDrinks,
+                onItemClick = { favorite ->
+                    haptics.navigation()
+                    selectedDrink = favorite
+                },
+                itemModifier = Modifier.heightIn(min = 65.dp),
+                leadingContent = { favorite ->
+                    ExpressiveIconBadge(
+                        index = favorite.id,
+                        size = 44.dp,
+                    ) {
+                        DrinkIcon(
+                            imageName = favorite.imageName,
+                            emoji = favorite.emoji,
+                            contentDescription = favorite.name,
+                            modifier = Modifier.size(28.dp),
+                            emojiSize = MaterialTheme.typography.titleLarge.fontSize,
+                        )
+                    }
+                },
+                content = { favorite ->
+                    Text(
+                        text = favorite.name,
+                        style = MaterialTheme.typography.bodyLarge,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                },
+                supportingContent = { favorite ->
+                    Text(
+                        text = stringResource(R.string.caffeine_mg_compact, favorite.defaultCaffeineMg),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                },
+                trailingContent = { _ ->
+                    Icon(
+                        imageVector = Icons.Filled.Star,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.size(20.dp),
+                    )
+                },
+            )
+
+            Spacer(modifier = Modifier.height(16.dp))
+        }
 
         if (showRecentServings) {
             Text(
@@ -469,11 +533,17 @@ fun AddScreen(
                         onDone = { selectedDrink = null },
                     )
                 } else {
+                    val drinkIsFavorite = favoriteDrinks.any { it.id == drink.id }
                     AddDrinkServingSheet(
                         preset = drink,
                         viewModel = viewModel,
                         userSettings = userSettings,
                         todayEntries = todayEntries,
+                        isFavorite = drinkIsFavorite,
+                        onToggleFavorite = {
+                            haptics.toggle()
+                            viewModel.setFavorite(drink.id, !drinkIsFavorite)
+                        },
                         onAdd = { quantity, unit, startedAtMillis, durationMinutes ->
                             haptics.confirm()
                             viewModel.logDrinkFromAddScreen(
@@ -520,6 +590,8 @@ private fun AddDrinkServingSheet(
     viewModel: CaffeineViewModel,
     userSettings: com.uc.caffeine.data.UserSettings,
     todayEntries: List<ConsumptionEntry>,
+    isFavorite: Boolean,
+    onToggleFavorite: () -> Unit,
     onAdd: (Int, DrinkUnit, Long, Int) -> Unit,
     onEditCustomDrink: (() -> Unit)? = null,
 ) {
@@ -585,6 +657,20 @@ private fun AddDrinkServingSheet(
                 Text(
                     text = preset.name,
                     style = MaterialTheme.typography.headlineSmall,
+                )
+            }
+
+            IconButton(onClick = onToggleFavorite) {
+                Icon(
+                    imageVector = if (isFavorite) Icons.Filled.Star else Icons.Outlined.StarBorder,
+                    contentDescription = stringResource(
+                        if (isFavorite) R.string.favorite_remove_cd else R.string.favorite_add_cd
+                    ),
+                    tint = if (isFavorite) {
+                        MaterialTheme.colorScheme.primary
+                    } else {
+                        MaterialTheme.colorScheme.onSurfaceVariant
+                    },
                 )
             }
         }

@@ -21,6 +21,7 @@ private enum class AnalyticsDestination : NavKey {
     Main,
     Sources,
     Bedtime,
+    Withdrawal,
     TimeOfDay,
 }
 
@@ -64,6 +65,7 @@ internal fun AnalyticsRoot(
                         onSourcesClick = { nestedBackStack.add(AnalyticsDestination.Sources) },
                         onBedtimeClick = { nestedBackStack.add(AnalyticsDestination.Bedtime) },
                         onTimeOfDayClick = { nestedBackStack.add(AnalyticsDestination.TimeOfDay) },
+                        onWithdrawalClick = { nestedBackStack.add(AnalyticsDestination.Withdrawal) },
                     )
 
                     AnalyticsDestination.Sources -> AnalyticsBySourcePage(
@@ -75,6 +77,11 @@ internal fun AnalyticsRoot(
                     )
 
                     AnalyticsDestination.Bedtime -> AnalyticsBedtimePage(
+                        uiState = uiState,
+                        onBack = { nestedBackStack.removeLastOrNull() },
+                    )
+
+                    AnalyticsDestination.Withdrawal -> AnalyticsWithdrawalPage(
                         uiState = uiState,
                         onBack = { nestedBackStack.removeLastOrNull() },
                     )

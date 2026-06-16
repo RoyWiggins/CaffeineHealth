@@ -178,13 +178,15 @@ internal fun buildHomeChartDisplaySeries(
     )
 }
 
-// Log-scale Y-axis mapping. log10(1 + v) keeps 0 anchored at the baseline
-// (so the area fill still reaches the axis) while spreading out small values.
-internal fun caffeineToAxisSpace(value: Double, logScale: Boolean): Double =
-    if (logScale) log10(1.0 + value.coerceAtLeast(0.0)) else value
+// Log-scale Y-axis mapping. Values are mapped relative to a floor (the bottom of
+// the chart): log10(max(v, floor) / floor). The floor maps to 0 so the area fill
+// still reaches the axis baseline, and anything at or below the floor is pinned to
+// the bottom. Keeping the axis minimum at 0 lets the regular step tick-placer work.
+internal fun caffeineToAxisSpace(value: Double, logScale: Boolean, floorMg: Double = 1.0): Double =
+    if (logScale) log10(value.coerceAtLeast(floorMg) / floorMg) else value
 
-internal fun axisSpaceToCaffeine(axisValue: Double, logScale: Boolean): Double =
-    if (logScale) (10.0).pow(axisValue) - 1.0 else axisValue
+internal fun axisSpaceToCaffeine(axisValue: Double, logScale: Boolean, floorMg: Double = 1.0): Double =
+    if (logScale) floorMg * (10.0).pow(axisValue) else axisValue
 
 private fun CartesianDrawingContext.xToCanvas(xValue: Double): Float {
     val fullRangeStart = ranges.minX - layerDimensions.startPadding / layerDimensions.xSpacing * ranges.xStep
@@ -218,6 +220,13 @@ fun CaffeineChart(
 
     val logScale = userSettings.chartLogScale
 
+    // In log mode the chart bottoms out at half the withdrawal threshold (or 10mg
+    // if no withdrawal threshold is set) instead of zero.
+    val logFloor = remember(userSettings.withdrawalThresholdEnabled, userSettings.withdrawalThresholdMg) {
+        (if (userSettings.withdrawalThresholdEnabled) userSettings.withdrawalThresholdMg / 2.0 else 10.0)
+            .coerceAtLeast(1.0)
+    }
+
     val yAxisStep = remember(maxCaffeine) {
         maxOf(100.0, kotlin.math.ceil(maxCaffeine / 3.0 / 100.0) * 100.0)
     }
@@ -226,11 +235,11 @@ fun CaffeineChart(
         yAxisStep * 4.0
     }
 
-    // The axis is plotted in "axis space" (identity for linear, log10(1+v) for
-    // log). All Y positions — the line series, range, ticks, threshold line, and
-    // marker placement — must be expressed in this same space to stay aligned.
-    val axisMaxY = remember(yAxisMax, logScale) {
-        if (logScale) caffeineToAxisSpace(yAxisMax, true) else yAxisMax
+    // The axis is plotted in "axis space" (identity for linear, floor-relative
+    // log10 for log). All Y positions — the line series, range, ticks, threshold
+    // lines, and marker placement — must be in this same space to stay aligned.
+    val axisMaxY = remember(yAxisMax, logScale, logFloor) {
+        if (logScale) caffeineToAxisSpace(yAxisMax, true, logFloor) else yAxisMax
     }
     val axisStepY = remember(axisMaxY, yAxisStep, logScale) {
         if (logScale) axisMaxY / (VERTICAL_AXIS_LABEL_COUNT - 1) else yAxisStep
@@ -265,8 +274,8 @@ fun CaffeineChart(
     // line-series x-values and the axis x-range are never from different
     // snapshots of chartData, which previously caused one-frame visual
     // glitches ("broken" look) whenever domainStartMillis shifted.
-    val seriesYValues = remember(displaySeries.yValues, logScale) {
-        if (logScale) displaySeries.yValues.map { caffeineToAxisSpace(it, true) }
+    val seriesYValues = remember(displaySeries.yValues, logScale, logFloor) {
+        if (logScale) displaySeries.yValues.map { caffeineToAxisSpace(it, true, logFloor) }
         else displaySeries.yValues
     }
     var isModelReady by remember { mutableStateOf(false) }
@@ -294,9 +303,9 @@ fun CaffeineChart(
         spacing = TIMELINE_AXIS_SPACING_UNITS,
         userSettings = userSettings,
     )
-    val yAxisFormatter = remember(logScale) {
+    val yAxisFormatter = remember(logScale, logFloor) {
         CartesianValueFormatter { _, value, _ ->
-            val realValue = axisSpaceToCaffeine(value, logScale)
+            val realValue = axisSpaceToCaffeine(value, logScale, logFloor)
             if (realValue.roundToInt() <= 0) "\u200B" else "${realValue.roundToInt()}"
         }
     }
@@ -333,9 +342,19 @@ fun CaffeineChart(
         LineCartesianLayer.LineProvider.series(line)
     }
     val thresholdDecoration = rememberThresholdLineDecoration(
-        thresholdLevel = caffeineToAxisSpace(chartData.thresholdLevel, logScale),
-        label = "Sleep threshold"
+        thresholdLevel = caffeineToAxisSpace(chartData.thresholdLevel, logScale, logFloor),
+        label = "Sleep threshold",
+        color = SleepReferenceColor,
+        labelAbove = false,
     )
+    val withdrawalDecoration = if (userSettings.withdrawalThresholdEnabled) {
+        rememberThresholdLineDecoration(
+            thresholdLevel = caffeineToAxisSpace(userSettings.withdrawalThresholdMg.toDouble(), logScale, logFloor),
+            label = "Withdrawal",
+            color = MaterialTheme.colorScheme.error,
+            labelAbove = true,
+        )
+    } else null
     val currentTimeX = remember(displaySeries.currentTimeX) {
         displaySeries.currentTimeX
     }
@@ -378,13 +397,13 @@ fun CaffeineChart(
     // Markers store caffeine values; map them into axis space so they sit on the
     // (possibly logarithmic) curve. xValue / headacheId are unchanged, so the
     // tap hit-testing keyed on those still lines up.
-    val displayConsumptionMarkers = remember(chartData.consumptionMarkers, logScale) {
+    val displayConsumptionMarkers = remember(chartData.consumptionMarkers, logScale, logFloor) {
         if (!logScale) chartData.consumptionMarkers
-        else chartData.consumptionMarkers.map { it.copy(yValue = caffeineToAxisSpace(it.yValue, true)) }
+        else chartData.consumptionMarkers.map { it.copy(yValue = caffeineToAxisSpace(it.yValue, true, logFloor)) }
     }
-    val displayHeadacheMarkers = remember(chartData.headacheMarkers, logScale) {
+    val displayHeadacheMarkers = remember(chartData.headacheMarkers, logScale, logFloor) {
         if (!logScale) chartData.headacheMarkers
-        else chartData.headacheMarkers.map { it.copy(yValue = caffeineToAxisSpace(it.yValue, true)) }
+        else chartData.headacheMarkers.map { it.copy(yValue = caffeineToAxisSpace(it.yValue, true, logFloor)) }
     }
 
     val consumptionDecoration = remember(displayConsumptionMarkers, axisMaxY, containerColor, strokeColor, dotColor, badgeColor, badgeTextColor) {
@@ -442,6 +461,7 @@ fun CaffeineChart(
         ),
         decorations = listOfNotNull(
             thresholdDecoration,
+            withdrawalDecoration,
             currentTimeDecoration,
             consumptionDecoration,
             headacheDecoration,
@@ -1077,31 +1097,33 @@ private fun compactTimelineDateFormatter(
 @Composable
 private fun rememberThresholdLineDecoration(
     thresholdLevel: Double,
-    label: String
+    label: String,
+    color: Color = SleepReferenceColor,
+    labelAbove: Boolean = false,
 ): Decoration {
-    val line = remember {
+    val line = remember(color) {
         LineComponent(
-            fill = Fill(SleepReferenceColor.copy(alpha = 0.65f)),
+            fill = Fill(color.copy(alpha = 0.65f)),
             thickness = 1.dp
         )
     }
     val labelStyle = MaterialTheme.typography.labelSmall.copy(
         fontFamily = MontserratFamily,
-        color = SleepReferenceColor,
+        color = color,
     )
     val labelFontRefreshKey = rememberFontRefreshKey(labelStyle)
-    val labelComponent = key(labelFontRefreshKey) {
+    val labelComponent = key(labelFontRefreshKey, color) {
         rememberTextComponent(style = labelStyle)
     }
 
-    return remember(thresholdLevel, line, labelComponent, label) {
+    return remember(thresholdLevel, line, labelComponent, label, labelAbove) {
         HorizontalLine(
             y = { thresholdLevel },
             line = line,
             labelComponent = labelComponent,
             label = { label },
             horizontalLabelPosition = Position.Horizontal.Start,
-            verticalLabelPosition = Position.Vertical.Bottom
+            verticalLabelPosition = if (labelAbove) Position.Vertical.Top else Position.Vertical.Bottom
         )
     }
 }

@@ -240,14 +240,34 @@ class CaffeineViewModel(application: Application) : AndroidViewModel(application
         initialValue = emptyList()
     )
 
-    // The 2 most recently logged serving combos — used by quick add on AddScreen.
-    val recentDrinks: StateFlow<List<RecentDrink>> = logDao
-        .getRecentlyUsedDrinks()
+    // Favorite drinks — pinned above recent servings on the Add screen.
+    val favoriteDrinks: StateFlow<List<DrinkPreset>> = allDrinkPresets
+        .map { presets -> presets.filter(DrinkPreset::isFavorite) }
         .stateIn(
             scope = viewModelScope,
             started = SharingStarted.WhileSubscribed(5_000),
             initialValue = emptyList()
         )
+
+    // The 2 most recently logged serving combos — used by quick add on AddScreen.
+    // Favorited drinks are excluded here since they already appear in the favorites row.
+    val recentDrinks: StateFlow<List<RecentDrink>> = combine(
+        logDao.getRecentlyUsedDrinks(),
+        favoriteDrinks,
+    ) { recents, favorites ->
+        val favoriteItemIds = favorites.map(DrinkPreset::itemId).filter { it.isNotBlank() }.toSet()
+        recents.filterNot { it.presetItemId.isNotBlank() && it.presetItemId in favoriteItemIds }
+    }.stateIn(
+        scope = viewModelScope,
+        started = SharingStarted.WhileSubscribed(5_000),
+        initialValue = emptyList()
+    )
+
+    fun setFavorite(presetId: Int, isFavorite: Boolean) {
+        viewModelScope.launch {
+            presetDao.setFavorite(presetId, isFavorite)
+        }
+    }
 
     // Grouped drink catalog by category — used by the Add screen for categorized display
     val groupedDrinkPresets: StateFlow<Map<String, List<DrinkPreset>>> =
@@ -466,6 +486,7 @@ class CaffeineViewModel(application: Application) : AndroidViewModel(application
         chartTickerFlow,
         _customRangeStart,
         _customRangeEnd,
+        allHeadaches,
     ) { values ->
         @Suppress("UNCHECKED_CAST")
         buildAnalyticsUiState(
@@ -476,6 +497,7 @@ class CaffeineViewModel(application: Application) : AndroidViewModel(application
             nowMillis = values[4] as Long,
             customStartDate = values[5] as? java.time.LocalDate,
             customEndDate = values[6] as? java.time.LocalDate,
+            headaches = values[7] as List<HeadacheEntry>,
         )
     }.flowOn(Dispatchers.Default)
         .stateIn(

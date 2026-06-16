@@ -6,16 +6,20 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.KeyboardArrowRight
 import androidx.compose.material.icons.filled.Bedtime
 import androidx.compose.material.icons.filled.PieChart
 import androidx.compose.material.icons.filled.Schedule
+import androidx.compose.material.icons.filled.Sick
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ElevatedCard
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
@@ -62,6 +66,10 @@ import com.uc.caffeine.ui.components.CaffeineScreenScaffold
 import com.uc.caffeine.ui.components.rememberAppHaptics
 import com.uc.caffeine.util.AnalyticsRange
 import com.uc.caffeine.util.AnalyticsUiState
+import com.uc.caffeine.util.DailyIntakeStat
+import androidx.compose.ui.Alignment
+import java.time.format.TextStyle
+import java.util.Locale
 import kotlin.math.roundToInt
 
 private data class AnalyticsNavItem(
@@ -79,6 +87,7 @@ internal fun AnalyticsMainPage(
     onSourcesClick: () -> Unit,
     onBedtimeClick: () -> Unit,
     onTimeOfDayClick: () -> Unit,
+    onWithdrawalClick: () -> Unit,
 ) {
     val haptics = rememberAppHaptics()
 
@@ -100,6 +109,12 @@ internal fun AnalyticsMainPage(
                 )
             }
 
+            if (uiState.last7DaysIntake.any { it.totalMg > 0 }) {
+                item {
+                    Last7DaysIntakeCard(stats = uiState.last7DaysIntake)
+                }
+            }
+
             if (uiState.hasData) {
                 item {
                     AnalyticsSummaryCard(uiState = uiState)
@@ -118,6 +133,10 @@ internal fun AnalyticsMainPage(
                             haptics.navigation()
                             onTimeOfDayClick()
                         },
+                        onWithdrawalClick = {
+                            haptics.navigation()
+                            onWithdrawalClick()
+                        },
                     )
                 }
             } else {
@@ -135,6 +154,7 @@ private fun AnalyticsNavCard(
     onSourcesClick: () -> Unit,
     onBedtimeClick: () -> Unit,
     onTimeOfDayClick: () -> Unit,
+    onWithdrawalClick: () -> Unit,
 ) {
     val items = listOf(
         AnalyticsNavItem(
@@ -148,6 +168,12 @@ private fun AnalyticsNavCard(
             summary = stringResource(R.string.analytics_bedtime_impact_summary),
             icon = Icons.Filled.Bedtime,
             onClick = onBedtimeClick,
+        ),
+        AnalyticsNavItem(
+            title = stringResource(R.string.analytics_withdrawal_impact),
+            summary = stringResource(R.string.analytics_withdrawal_impact_summary),
+            icon = Icons.Filled.Sick,
+            onClick = onWithdrawalClick,
         ),
         AnalyticsNavItem(
             title = stringResource(R.string.analytics_when_you_drink),
@@ -269,6 +295,84 @@ private fun AnalyticsSummaryCard(uiState: AnalyticsUiState) {
                         modifier = Modifier.weight(1f),
                         contentColor = contentColor,
                     )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun Last7DaysIntakeCard(stats: List<DailyIntakeStat>) {
+    val maxValue = stats.maxOfOrNull { it.totalMg }?.takeIf { it > 0 } ?: 1
+    val today = remember { java.time.LocalDate.now() }
+
+    ElevatedCard(
+        modifier = Modifier.fillMaxWidth(),
+        shape = AnalyticsCardShape,
+        colors = CardDefaults.elevatedCardColors(
+            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+        ),
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 20.dp, vertical = 20.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            Text(
+                text = stringResource(R.string.analytics_last_7_days_title),
+                style = MaterialTheme.typography.titleMedium,
+            )
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(160.dp),
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                verticalAlignment = Alignment.Bottom,
+            ) {
+                stats.forEach { stat ->
+                    val fraction = (stat.totalMg.toFloat() / maxValue.toFloat()).coerceIn(0f, 1f)
+                    val isToday = stat.date == today
+                    val dayLabel = stat.date.dayOfWeek.getDisplayName(TextStyle.NARROW, Locale.getDefault())
+
+                    Column(
+                        modifier = Modifier.weight(1f),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                    ) {
+                        Text(
+                            text = "${stat.totalMg}",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .weight(1f),
+                            contentAlignment = Alignment.BottomCenter,
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxWidth(0.6f)
+                                    .fillMaxHeight(if (stat.totalMg > 0) fraction.coerceAtLeast(0.02f) else 0f)
+                                    .clip(RoundedCornerShape(topStart = 6.dp, topEnd = 6.dp))
+                                    .background(
+                                        if (isToday) MaterialTheme.colorScheme.primary
+                                        else MaterialTheme.colorScheme.primary.copy(alpha = 0.5f)
+                                    ),
+                            )
+                        }
+                        Text(
+                            text = dayLabel,
+                            style = MaterialTheme.typography.labelSmall,
+                            color = if (isToday) {
+                                MaterialTheme.colorScheme.primary
+                            } else {
+                                MaterialTheme.colorScheme.onSurfaceVariant
+                            },
+                            fontWeight = if (isToday) FontWeight.Bold else FontWeight.Normal,
+                            modifier = Modifier.padding(top = 4.dp),
+                        )
+                    }
                 }
             }
         }
