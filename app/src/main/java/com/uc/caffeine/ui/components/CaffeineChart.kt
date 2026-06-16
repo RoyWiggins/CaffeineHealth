@@ -365,11 +365,13 @@ fun CaffeineChart(
         dashed = false,
         labelAtTop = false,
     )
-    val bedtimeDecorations = rememberDailyBedtimeDecorations(
+    val bedtimeDecorations = rememberDailyTimeDecorations(
         domainStartMillis = chartData.domainStartMillis,
         minX = bufferedMinX,
         maxX = bufferedMaxX,
         userSettings = userSettings,
+        hour = userSettings.sleepTimeHour,
+        minute = userSettings.sleepTimeMinute,
         lineColor = colorScheme.primary.copy(alpha = 0.8f),
         labelColor = colorScheme.primary,
         icon = R.drawable.ic_moon,
@@ -379,6 +381,26 @@ fun CaffeineChart(
         iconSize = BedtimeIconSize,
         iconOnRightSide = true,
     )
+    val wakeDecorations = if (userSettings.withdrawalThresholdEnabled) {
+        rememberDailyTimeDecorations(
+            domainStartMillis = chartData.domainStartMillis,
+            minX = bufferedMinX,
+            maxX = bufferedMaxX,
+            userSettings = userSettings,
+            hour = userSettings.wakeTimeHour,
+            minute = userSettings.wakeTimeMinute,
+            lineColor = colorScheme.tertiary.copy(alpha = 0.8f),
+            labelColor = colorScheme.tertiary,
+            icon = R.drawable.ic_sun,
+            dashed = true,
+            labelAtTop = true,
+            iconTopOffset = BedtimeIconTopOffset,
+            iconSize = BedtimeIconSize,
+            iconOnRightSide = false,
+        )
+    } else {
+        emptyList()
+    }
 
     val markerPositions = remember { mutableMapOf<Double, Offset>() }
     val headacheMarkerPositions = remember { mutableMapOf<Int, Offset>() }
@@ -465,7 +487,7 @@ fun CaffeineChart(
             currentTimeDecoration,
             consumptionDecoration,
             headacheDecoration,
-        ) + bedtimeDecorations,
+        ) + bedtimeDecorations + wakeDecorations,
     )
 
     val currentTimeXState = rememberUpdatedState(currentTimeX)
@@ -1129,11 +1151,13 @@ private fun rememberThresholdLineDecoration(
 }
 
 @Composable
-private fun rememberDailyBedtimeDecorations(
+private fun rememberDailyTimeDecorations(
     domainStartMillis: Long,
     minX: Double,
     maxX: Double,
     userSettings: UserSettings,
+    hour: Int,
+    minute: Int,
     lineColor: Color,
     labelColor: Color,
     icon: Int? = null,
@@ -1146,13 +1170,13 @@ private fun rememberDailyBedtimeDecorations(
     val zoneId = remember(userSettings.timeZoneId) {
         userSettings.resolvedZoneId()
     }
-    val bedtimeXValues = remember(
+    val markerXValues = remember(
         domainStartMillis,
         minX,
         maxX,
         zoneId,
-        userSettings.sleepTimeHour,
-        userSettings.sleepTimeMinute,
+        hour,
+        minute,
     ) {
         val bufferedStartMillis = ChartDataGenerator.domainXToTimestamp(
             domainStartMillis = domainStartMillis,
@@ -1164,22 +1188,22 @@ private fun rememberDailyBedtimeDecorations(
         )
         val startDate = Instant.ofEpochMilli(bufferedStartMillis).atZone(zoneId).toLocalDate().minusDays(1)
         val endDate = Instant.ofEpochMilli(bufferedEndMillis).atZone(zoneId).toLocalDate().plusDays(1)
-        val bedtimeTime = LocalTime.of(userSettings.sleepTimeHour, userSettings.sleepTimeMinute)
+        val markerTime = LocalTime.of(hour, minute)
 
         buildList {
             var date = startDate
             while (!date.isAfter(endDate)) {
-                val bedtimeMillis = ZonedDateTime.of(date, bedtimeTime, zoneId)
+                val markerMillis = ZonedDateTime.of(date, markerTime, zoneId)
                     .withSecond(0)
                     .withNano(0)
                     .toInstant()
                     .toEpochMilli()
-                val bedtimeX = ChartDataGenerator.timestampToDomainX(
+                val markerX = ChartDataGenerator.timestampToDomainX(
                     domainStartMillis = domainStartMillis,
-                    targetTimestampMillis = bedtimeMillis,
+                    targetTimestampMillis = markerMillis,
                 )
-                if (bedtimeX in minX..maxX) {
-                    add(bedtimeX)
+                if (markerX in minX..maxX) {
+                    add(markerX)
                 }
                 date = date.plusDays(1)
             }
@@ -1187,10 +1211,10 @@ private fun rememberDailyBedtimeDecorations(
     }
 
     val decorations = mutableListOf<Decoration>()
-    for (bedtimeX in bedtimeXValues) {
-        key(bedtimeX) {
+    for (markerX in markerXValues) {
+        key(markerX) {
             val decoration = rememberVerticalReferenceLineDecoration(
-                xValue = bedtimeX,
+                xValue = markerX,
                 lineColor = lineColor,
                 labelColor = labelColor,
                 dashed = dashed,

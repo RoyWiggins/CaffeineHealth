@@ -326,6 +326,7 @@
     <string name="analytics_bedtime_impact">Bedtime impact</string>
     <string name="analytics_bedtime_impact_summary">How much caffeine is still active by the time you sleep.</string>
     <string name="analytics_last_7_days_title">Last 7 days</string>
+    <string name="analytics_last_7_days_legend">Bars: total intake · Line: daily low</string>
     <string name="analytics_withdrawal_impact">Withdrawal impact</string>
     <string name="analytics_withdrawal_impact_summary">Daily caffeine lows, threshold dips, and headaches.</string>
     <string name="analytics_withdrawal_threshold_label">Withdrawal threshold: %1$d mg</string>

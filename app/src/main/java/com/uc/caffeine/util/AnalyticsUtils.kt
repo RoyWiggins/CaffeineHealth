@@ -71,10 +71,12 @@ data class DailyBedtimeStat(
     val isSafe: Boolean,
 )
 
-/** Total caffeine consumed on a given day (delayed-release doses count on the day they kick in). */
+/** Total caffeine consumed on a given day (delayed-release doses count on the day they kick in),
+ *  plus the day's lowest active caffeine concentration. */
 data class DailyIntakeStat(
     val date: LocalDate,
     val totalMg: Int,
+    val minCaffeineMg: Double,
 )
 
 /** Per-day withdrawal stats: the day's lowest active caffeine, whether it dipped below the
@@ -157,7 +159,7 @@ fun buildAnalyticsUiState(
         0
     }
     val timeOfDayValues = buildTimeOfDayValues(entriesInRange = entriesInRange, zoneId = zoneId)
-    val last7DaysIntake = buildLast7DaysIntake(entries = entries, today = today, zoneId = zoneId)
+    val last7DaysIntake = buildLast7DaysIntake(entries = entries, today = today, settings = settings)
     val headacheDates = headaches
         .map { Instant.ofEpochMilli(it.startedAtMillis).atZone(zoneId).toLocalDate() }
         .toSet()
@@ -215,8 +217,9 @@ fun buildAnalyticsUiState(
 private fun buildLast7DaysIntake(
     entries: List<ConsumptionEntry>,
     today: LocalDate,
-    zoneId: java.time.ZoneId,
+    settings: UserSettings,
 ): List<DailyIntakeStat> {
+    val zoneId = settings.resolvedZoneId()
     // Bucket each dose on the day its caffeine actually begins entering the
     // bloodstream, so delayed-release pills count toward the day they kick in.
     val totalsByDay = entries.groupBy { entry ->
@@ -227,16 +230,22 @@ private fun buildLast7DaysIntake(
         DailyIntakeStat(
             date = date,
             totalMg = totalsByDay[date]?.sumOf(ConsumptionEntry::caffeineMg) ?: 0,
+            minCaffeineMg = computeDailyMinCaffeine(date, entries, settings),
         )
     }
 }
 
-private fun buildDailyWithdrawalStat(
+/**
+ * The lowest active caffeine concentration during [date]. The level decays
+ * continuously and only jumps up when a dose kicks in, so the daily minimum
+ * occurs at the start of day, the end of day, or just before one of that day's
+ * doses begins — sampling those candidate points finds the true minimum.
+ */
+private fun computeDailyMinCaffeine(
     date: LocalDate,
     entries: List<ConsumptionEntry>,
-    headacheDates: Set<LocalDate>,
     settings: UserSettings,
-): DailyWithdrawalStat {
+): Double {
     val zoneId = settings.resolvedZoneId()
     val halfLife = settings.effectiveHalfLifeMinutes
     val startOfDay = date.atStartOfDay(zoneId).toInstant().toEpochMilli()
@@ -247,9 +256,6 @@ private fun buildDailyWithdrawalStat(
     val windowStart = date.minusDays(3).atStartOfDay(zoneId).toInstant().toEpochMilli()
     val relevantEntries = entries.filter { it.effectiveStartMillis in windowStart..endOfDay }
 
-    // The active level decays continuously and only jumps up when a dose kicks in,
-    // so the day's minimum occurs at the start of day, at the end of day, or just
-    // before one of that day's doses begins. Sampling those points finds the true min.
     val candidateTimes = buildList {
         add(startOfDay)
         add(endOfDay)
@@ -258,14 +264,22 @@ private fun buildDailyWithdrawalStat(
             if (kickIn in startOfDay..endOfDay) add((kickIn - 60_000L).coerceAtLeast(startOfDay))
         }
     }
-    val minCaffeineMg = candidateTimes.minOf { time ->
+    return candidateTimes.minOf { time ->
         CaffeineCalculator.calculateCurrentLevel(
             entries = relevantEntries,
             currentTimeMillis = time,
             halfLifeMinutes = halfLife,
         )
     }
+}
 
+private fun buildDailyWithdrawalStat(
+    date: LocalDate,
+    entries: List<ConsumptionEntry>,
+    headacheDates: Set<LocalDate>,
+    settings: UserSettings,
+): DailyWithdrawalStat {
+    val minCaffeineMg = computeDailyMinCaffeine(date, entries, settings)
     val belowThreshold = settings.withdrawalThresholdEnabled &&
         minCaffeineMg < settings.withdrawalThresholdMg.toDouble()
 
