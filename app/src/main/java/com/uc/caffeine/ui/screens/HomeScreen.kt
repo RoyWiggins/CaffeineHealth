@@ -362,20 +362,36 @@ fun HomeScreen(
                     }
 
                     stickyHeader(key = "history-header-$date") {
+                        val dayTotalMg = itemsForDay
+                            .filterIsInstance<HomeTimelineItem.Drink>()
+                            .sumOf { it.entry.caffeineMg }
                         Surface(
                             modifier = Modifier.fillMaxWidth(),
                             color = MaterialTheme.colorScheme.surface
                         ) {
-                            Text(
-                                text = formatTimelineHeaderText(
-                                    date = date,
-                                    settings = userSettings,
-                                    referenceTimeMillis = chartData.currentTimeMillis,
-                                ),
-                                modifier = Modifier.padding(bottom = 8.dp),
-                                style = MaterialTheme.typography.titleMedium,
-                                color = MaterialTheme.colorScheme.primary
-                            )
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(bottom = 8.dp),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                Text(
+                                    text = formatTimelineHeaderText(
+                                        date = date,
+                                        settings = userSettings,
+                                        referenceTimeMillis = chartData.currentTimeMillis,
+                                    ),
+                                    style = MaterialTheme.typography.titleMedium,
+                                    color = MaterialTheme.colorScheme.primary
+                                )
+                                Text(
+                                    text = stringResource(R.string.caffeine_mg, dayTotalMg),
+                                    style = MaterialTheme.typography.titleMedium,
+                                    fontWeight = FontWeight.SemiBold,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                            }
                         }
                     }
 

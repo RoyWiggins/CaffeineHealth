@@ -5,6 +5,7 @@ import com.uc.caffeine.data.model.ConsumptionEntry
 import com.uc.caffeine.data.model.HeadacheEntry
 import java.time.Instant
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -58,6 +59,28 @@ class HeadacheTimelineTest {
         // Most recent first: the 11:00 headache precedes the 08:00 drink.
         assertTrue(dayItems.first() is HomeTimelineItem.Headache)
         assertTrue(dayItems[1] is HomeTimelineItem.Drink)
+    }
+
+    @Test
+    fun buildHomeTimeline_groupsDelayedDrinkOnTheDayItTakesEffect() {
+        // Taken at 23:30 on the 5th with a 60-minute delay → kicks in 00:30 on the 6th.
+        val delayedPill = ConsumptionEntry(
+            id = 1,
+            drinkName = "Slow caffeine pill",
+            caffeineMg = 200,
+            emoji = "💊",
+            startedAtMillis = millis("2026-04-05T23:30:00Z"),
+            delayMinutes = 60,
+        )
+
+        val timeline = buildHomeTimeline(
+            entries = listOf(delayedPill),
+            headaches = emptyList(),
+            settings = settings,
+        )
+
+        assertTrue(timeline.containsKey(java.time.LocalDate.parse("2026-04-06")))
+        assertFalse(timeline.containsKey(java.time.LocalDate.parse("2026-04-05")))
     }
 
     @Test

@@ -16,7 +16,9 @@ sealed interface HomeTimelineItem {
     val timestampMillis: Long
 
     data class Drink(val entry: ConsumptionEntry) : HomeTimelineItem {
-        override val timestampMillis: Long get() = entry.startedAtMillis
+        // Group/sort by when the caffeine takes effect, so delayed-release doses
+        // shift forward into the day they actually kick in.
+        override val timestampMillis: Long get() = entry.effectiveStartMillis
     }
 
     /**
