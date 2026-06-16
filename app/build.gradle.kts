@@ -29,6 +29,12 @@ android {
     }
 
     buildTypes {
+        debug {
+            // Distinct application id so debug test builds install alongside the
+            // Play/release app instead of clashing with its signature.
+            applicationIdSuffix = ".debug"
+            versionNameSuffix = "-debug"
+        }
         release {
             signingConfig = signingConfigs["release"].takeIf { it.storeFile != null }
             isMinifyEnabled = true
