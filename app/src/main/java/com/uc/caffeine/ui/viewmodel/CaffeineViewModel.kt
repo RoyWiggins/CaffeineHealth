@@ -587,6 +587,9 @@ class CaffeineViewModel(application: Application) : AndroidViewModel(application
             )
             val newId = logDao.logDrink(entry)
             triggerWidgetRefresh()
+            com.uc.caffeine.util.notifications.NotificationScheduler.scheduleOrCancelDrinkReminder(
+                getApplication(), newId.toInt(), preset.name, startedAtMillis,
+            )
             addScreenEventsChannel.send(AddScreenUiEvent.DrinkLogged(preset.name))
             val settings = userSettings.value
             if (settings.healthConnectEnabled) {
@@ -655,6 +658,10 @@ class CaffeineViewModel(application: Application) : AndroidViewModel(application
                 durationMinutes = coercedDuration,
             )
             triggerWidgetRefresh()
+            // Moving the entry re-arms (or clears) its "time to take it" reminder.
+            com.uc.caffeine.util.notifications.NotificationScheduler.scheduleOrCancelDrinkReminder(
+                getApplication(), entry.id, entry.drinkName, startedAtMillis,
+            )
             homeScreenEventsChannel.send(
                 HomeScreenUiEvent.LogActionCompleted("Updated ${entry.drinkName}")
             )
@@ -704,6 +711,9 @@ class CaffeineViewModel(application: Application) : AndroidViewModel(application
         viewModelScope.launch {
             logDao.deleteEntryById(entry.id)
             triggerWidgetRefresh()
+            com.uc.caffeine.util.notifications.NotificationScheduler.cancelDrinkReminder(
+                getApplication(), entry.id,
+            )
             homeScreenEventsChannel.send(
                 HomeScreenUiEvent.LogActionCompleted("Deleted ${entry.drinkName}")
             )
@@ -752,6 +762,14 @@ class CaffeineViewModel(application: Application) : AndroidViewModel(application
             val todayEntriesToDelete = logDao.getTodayEntriesOnce(startOfDay)
             logDao.clearToday(startOfDay)
             triggerWidgetRefresh()
+            val now = System.currentTimeMillis()
+            todayEntriesToDelete
+                .filter { it.startedAtMillis > now }
+                .forEach {
+                    com.uc.caffeine.util.notifications.NotificationScheduler.cancelDrinkReminder(
+                        getApplication(), it.id,
+                    )
+                }
             if (settings.healthConnectEnabled) {
                 runCatching { healthConnectManager.deleteEntries(todayEntriesToDelete) }
             }

@@ -300,6 +300,8 @@
     <string name="notification_channel_daily_description">Daily caffeine logging reminders</string>
     <string name="notification_channel_inactivity">Inactivity Reminders</string>
     <string name="notification_channel_inactivity_description">Reminder when you haven\'t logged caffeine in a while</string>
+    <string name="notification_channel_drink_reminder">Scheduled Drinks</string>
+    <string name="notification_channel_drink_reminder_description">Reminders to take drinks you scheduled for a future time</string>
 
     <!-- Notification messages -->
     <string name="notification_daily_title">Caffeine Check-in</string>
@@ -308,6 +310,9 @@
     <string name="notification_daily_evening">Time to log your evening caffeine. Get accurate bedtime predictions.</string>
     <string name="notification_inactivity_title">Miss your caffeine log?</string>
     <string name="notification_inactivity_body">It has been 5 days since you logged. Open the app to keep your tracker accurate.</string>
+    <string name="notification_drink_reminder_title">Time to take it</string>
+    <string name="notification_drink_reminder_body">%1$s is scheduled for now.</string>
+    <string name="notification_drink_reminder_body_generic">Your scheduled drink is due now.</string>
 
     <!-- Widgets (in-content text) -->
     <string name="widget_caffeine_now_inline_label">Caffeine Now</string>

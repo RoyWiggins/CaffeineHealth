@@ -58,6 +58,10 @@ interface ConsumptionLogDao {
     @Query("SELECT * FROM consumption_log ORDER BY startedAtMillis DESC")
     suspend fun getAllEntriesOnce(): List<ConsumptionEntry>
 
+    // Entries scheduled for the future — used to re-arm "take it" reminders after reboot
+    @Query("SELECT * FROM consumption_log WHERE startedAtMillis > :nowMillis ORDER BY startedAtMillis ASC")
+    suspend fun getFutureEntriesOnce(nowMillis: Long): List<ConsumptionEntry>
+
     // One-shot today read — used by Reset Today to collect HC record ids before clearing
     @Query("SELECT * FROM consumption_log WHERE startedAtMillis >= :startOfDay ORDER BY startedAtMillis DESC")
     suspend fun getTodayEntriesOnce(startOfDay: Long): List<ConsumptionEntry>

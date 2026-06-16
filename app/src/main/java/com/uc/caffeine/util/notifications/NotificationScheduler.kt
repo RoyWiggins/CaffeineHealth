@@ -14,11 +14,80 @@ object NotificationScheduler {
     const val EXTRA_NOTIFICATION_TYPE = "notification_type"
     const val TYPE_DAILY_REMINDER = "daily_reminder"
     const val TYPE_INACTIVITY = "inactivity"
+    const val TYPE_DRINK_REMINDER = "drink_reminder"
     const val EXTRA_HOUR = "hour"
     const val EXTRA_MINUTE = "minute"
+    const val EXTRA_ENTRY_ID = "entry_id"
+    const val EXTRA_DRINK_NAME = "drink_name"
 
     private const val INACTIVITY_REQUEST_CODE = 9999
     private const val INACTIVITY_DAYS_MS = 5L * 24 * 60 * 60 * 1000
+
+    // Request codes for per-entry "time to take it" reminders are offset well clear
+    // of the daily-reminder (1000+) and inactivity (9999) codes.
+    private const val DRINK_REMINDER_REQUEST_CODE_BASE = 5_000_000
+
+    /**
+     * Schedule a one-shot reminder for a future-dated consumption entry, or cancel any
+     * existing one if the entry is no longer in the future (e.g. moved back in time).
+     */
+    fun scheduleOrCancelDrinkReminder(
+        context: Context,
+        entryId: Int,
+        drinkName: String,
+        startedAtMillis: Long,
+    ) {
+        if (startedAtMillis > System.currentTimeMillis()) {
+            scheduleDrinkReminder(context, entryId, drinkName, startedAtMillis)
+        } else {
+            cancelDrinkReminder(context, entryId)
+        }
+    }
+
+    fun scheduleDrinkReminder(
+        context: Context,
+        entryId: Int,
+        drinkName: String,
+        triggerAtMillis: Long,
+    ) {
+        val alarmManager = context.getSystemService(Context.ALARM_SERVICE) as AlarmManager
+        val pendingIntent = drinkReminderPendingIntent(
+            context = context,
+            entryId = entryId,
+            drinkName = drinkName,
+            flags = PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+        ) ?: return
+        alarmManager.setDozeCompat(triggerAtMillis, pendingIntent)
+    }
+
+    fun cancelDrinkReminder(context: Context, entryId: Int) {
+        val alarmManager = context.getSystemService(Context.ALARM_SERVICE) as AlarmManager
+        val pendingIntent = drinkReminderPendingIntent(
+            context = context,
+            entryId = entryId,
+            drinkName = "",
+            flags = PendingIntent.FLAG_NO_CREATE or PendingIntent.FLAG_IMMUTABLE,
+        ) ?: return
+        alarmManager.cancel(pendingIntent)
+        pendingIntent.cancel()
+    }
+
+    fun drinkReminderRequestCode(entryId: Int): Int = DRINK_REMINDER_REQUEST_CODE_BASE + entryId
+
+    private fun drinkReminderPendingIntent(
+        context: Context,
+        entryId: Int,
+        drinkName: String,
+        flags: Int,
+    ): PendingIntent? {
+        val intent = Intent(context, NotificationReceiver::class.java).apply {
+            action = INTENT_ACTION
+            putExtra(EXTRA_NOTIFICATION_TYPE, TYPE_DRINK_REMINDER)
+            putExtra(EXTRA_ENTRY_ID, entryId)
+            putExtra(EXTRA_DRINK_NAME, drinkName)
+        }
+        return PendingIntent.getBroadcast(context, drinkReminderRequestCode(entryId), intent, flags)
+    }
 
     fun scheduleDailyReminder(context: Context, hour: Int, minute: Int) {
         val alarmManager = context.getSystemService(Context.ALARM_SERVICE) as AlarmManager

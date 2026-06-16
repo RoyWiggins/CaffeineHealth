@@ -29,7 +29,28 @@ class NotificationReceiver : BroadcastReceiver() {
             NotificationScheduler.TYPE_INACTIVITY -> {
                 showInactivityNotification(context)
             }
+            NotificationScheduler.TYPE_DRINK_REMINDER -> {
+                val entryId = intent.getIntExtra(NotificationScheduler.EXTRA_ENTRY_ID, -1)
+                if (entryId == -1) return
+                val drinkName = intent.getStringExtra(NotificationScheduler.EXTRA_DRINK_NAME).orEmpty()
+                showDrinkReminderNotification(context, entryId, drinkName)
+            }
         }
+    }
+
+    private fun showDrinkReminderNotification(context: Context, entryId: Int, drinkName: String) {
+        val body = if (drinkName.isBlank()) {
+            context.getString(R.string.notification_drink_reminder_body_generic)
+        } else {
+            context.getString(R.string.notification_drink_reminder_body, drinkName)
+        }
+        showNotification(
+            context = context,
+            notificationId = NotificationScheduler.drinkReminderRequestCode(entryId),
+            channelId = NotificationChannels.CHANNEL_DRINK_REMINDER,
+            title = context.getString(R.string.notification_drink_reminder_title),
+            body = body,
+        )
     }
 
     private fun showDailyReminderNotification(context: Context, hour: Int, minute: Int) {
