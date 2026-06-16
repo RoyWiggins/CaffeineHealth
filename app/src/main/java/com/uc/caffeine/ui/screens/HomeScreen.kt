@@ -22,10 +22,13 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Cancel
 import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.DonutLarge
 import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.ExpandLess
+import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.automirrored.filled.ShowChart
 import androidx.compose.material.icons.filled.Sick
 import androidx.compose.material.icons.filled.Warning
@@ -283,14 +286,21 @@ fun HomeScreen(
             }
         }
 
+        // Dismissal resets each night (keyed on the upcoming wake time).
+        var withdrawalDismissed by remember(wakeForecast.second) { mutableStateOf(false) }
+        val millisUntilWake = wakeForecast.second - liveNowMillis
+        val withinWakeWindow = millisUntilWake in 0..(10L * 60 * 60 * 1000)
         val showWithdrawalWarning = userSettings.withdrawalThresholdEnabled &&
             currentLevel > 0.0 &&
-            wakeForecast.first < userSettings.withdrawalThresholdMg
+            wakeForecast.first < userSettings.withdrawalThresholdMg &&
+            withinWakeWindow &&
+            !withdrawalDismissed
         AnimatedVisibility(visible = showWithdrawalWarning) {
             WithdrawalForecastCard(
                 caffeineAtWakeMg = wakeForecast.first,
                 wakeTimeMillis = wakeForecast.second,
                 userSettings = userSettings,
+                onDismiss = { withdrawalDismissed = true },
                 modifier = Modifier.padding(top = 16.dp),
             )
         }
@@ -909,32 +919,60 @@ private fun WithdrawalForecastCard(
     caffeineAtWakeMg: Double,
     wakeTimeMillis: Long,
     userSettings: UserSettings,
+    onDismiss: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    var expanded by remember { mutableStateOf(false) }
+    val contentColor = MaterialTheme.colorScheme.onTertiaryContainer
+
     ElevatedCard(
+        onClick = { expanded = !expanded },
         modifier = modifier.fillMaxWidth(),
         colors = CardDefaults.elevatedCardColors(
             containerColor = MaterialTheme.colorScheme.tertiaryContainer,
         ),
     ) {
-        Row(
+        Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(16.dp),
-            verticalAlignment = Alignment.CenterVertically,
+                .padding(horizontal = 12.dp, vertical = 6.dp),
         ) {
-            Icon(
-                imageVector = Icons.Default.Warning,
-                contentDescription = null,
-                tint = MaterialTheme.colorScheme.onTertiaryContainer,
-            )
-            Spacer(modifier = Modifier.width(12.dp))
-            Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    text = stringResource(R.string.withdrawal_forecast_title),
-                    style = MaterialTheme.typography.labelMedium,
-                    color = MaterialTheme.colorScheme.onTertiaryContainer,
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(
+                    imageVector = Icons.Default.Warning,
+                    contentDescription = null,
+                    tint = contentColor,
+                    modifier = Modifier.size(18.dp),
                 )
+                Spacer(modifier = Modifier.width(10.dp))
+                Text(
+                    text = stringResource(R.string.withdrawal_forecast_short),
+                    style = MaterialTheme.typography.labelLarge,
+                    color = contentColor,
+                    modifier = Modifier.weight(1f),
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                Icon(
+                    imageVector = if (expanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
+                    contentDescription = null,
+                    tint = contentColor,
+                    modifier = Modifier.size(20.dp),
+                )
+                IconButton(
+                    onClick = onDismiss,
+                    modifier = Modifier.size(28.dp),
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Close,
+                        contentDescription = stringResource(R.string.action_dismiss),
+                        tint = contentColor,
+                        modifier = Modifier.size(18.dp),
+                    )
+                }
+            }
+
+            AnimatedVisibility(visible = expanded) {
                 Text(
                     text = stringResource(
                         R.string.withdrawal_forecast_warning,
@@ -943,7 +981,8 @@ private fun WithdrawalForecastCard(
                         userSettings.withdrawalThresholdMg,
                     ),
                     style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onTertiaryContainer,
+                    color = contentColor,
+                    modifier = Modifier.padding(start = 28.dp, top = 2.dp, bottom = 6.dp, end = 8.dp),
                 )
             }
         }

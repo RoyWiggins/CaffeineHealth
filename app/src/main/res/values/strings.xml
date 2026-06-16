@@ -217,6 +217,8 @@
 
     <!-- Withdrawal forecast (HomeScreen card) -->
     <string name="withdrawal_forecast_title">Morning withdrawal</string>
+    <string name="withdrawal_forecast_short">Morning withdrawal likely</string>
+    <string name="action_dismiss">Dismiss</string>
     <string name="withdrawal_forecast_warning">By %1$s your caffeine is set to drop to ~%2$d mg — below your %3$d mg withdrawal threshold. You may wake up in withdrawal.</string>
 
     <!-- Headache tracking -->
