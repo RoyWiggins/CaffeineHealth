@@ -71,8 +71,11 @@ abstract class CaffeineDatabase : RoomDatabase() {
 
         private val MIGRATION_13_14 = object : Migration(13, 14) {
             override fun migrate(db: SupportSQLiteDatabase) {
-                // Existing rows are historical, so default them to taken.
                 db.execSQL("ALTER TABLE consumption_log ADD COLUMN taken INTEGER NOT NULL DEFAULT 1")
+                // Entries already in the future at migration time are scheduled,
+                // not yet taken; everything in the past stays taken.
+                val now = System.currentTimeMillis()
+                db.execSQL("UPDATE consumption_log SET taken = 0 WHERE startedAtMillis > $now")
             }
         }
 
