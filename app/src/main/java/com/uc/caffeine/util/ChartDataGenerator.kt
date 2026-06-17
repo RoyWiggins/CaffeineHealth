@@ -20,7 +20,6 @@ object ChartDataGenerator {
     private const val HOURLY_HISTORY_DAYS = 7
     private const val THREE_HOURLY_HISTORY_DAYS = 30
     private const val ONE_HOUR_MILLIS = 60 * 60 * 1000L
-    private const val THIRTY_MINUTES_MILLIS = 30 * 60 * 1000L
     private const val THREE_HOURS_MILLIS = 3 * ONE_HOUR_MILLIS
     private const val SIX_HOURS_MILLIS = 6 * ONE_HOUR_MILLIS
     private const val ONE_DAY_MILLIS = 24 * ONE_HOUR_MILLIS
@@ -395,6 +394,7 @@ object ChartDataGenerator {
             alignedResolutionBoundary(currentTime - THIRTY_DAYS_MILLIS),
             alignedResolutionBoundary(currentTime - SEVEN_DAYS_MILLIS),
             alignedResolutionBoundary(currentTime - RECENT_HISTORY_HOURS * ONE_HOUR_MILLIS),
+            alignedResolutionBoundary(currentTime + THREE_DAYS_MILLIS),
         )
 
         return boundaries.filter { it > pointTime }.minOrNull() ?: Long.MAX_VALUE
@@ -413,9 +413,9 @@ object ChartDataGenerator {
         val futureOffsetMillis = timestampMillis - currentTime
         val ageMillis = currentTime - timestampMillis
         return when {
+            // Keep full 15-minute detail for the next three days so upcoming
+            // caffeine (including delayed-release doses) is drawn precisely.
             futureOffsetMillis > THREE_DAYS_MILLIS -> THREE_HOURS_MILLIS
-            futureOffsetMillis > ONE_DAY_MILLIS -> ONE_HOUR_MILLIS
-            futureOffsetMillis > SIX_HOURS_MILLIS -> THIRTY_MINUTES_MILLIS
             ageMillis > THIRTY_DAYS_MILLIS -> SIX_HOURS_MILLIS
             ageMillis > SEVEN_DAYS_MILLIS -> THREE_HOURS_MILLIS
             ageMillis > ONE_DAY_MILLIS -> ONE_HOUR_MILLIS
