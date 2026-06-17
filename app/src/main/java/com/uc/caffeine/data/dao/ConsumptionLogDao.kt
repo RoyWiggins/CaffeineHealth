@@ -22,7 +22,8 @@ interface ConsumptionLogDao {
             unitKey = :unitKey,
             unitCaffeineMg = :unitCaffeineMg,
             startedAtMillis = :startedAtMillis,
-            durationMinutes = :durationMinutes
+            durationMinutes = :durationMinutes,
+            taken = :taken
         WHERE id = :entryId
         """
     )
@@ -34,7 +35,11 @@ interface ConsumptionLogDao {
         unitCaffeineMg: Double,
         startedAtMillis: Long,
         durationMinutes: Int,
+        taken: Boolean,
     )
+
+    @Query("UPDATE consumption_log SET taken = 1 WHERE id = :entryId")
+    suspend fun markTaken(entryId: Int)
 
     @Query("DELETE FROM consumption_log WHERE id = :entryId")
     suspend fun deleteEntryById(entryId: Int)

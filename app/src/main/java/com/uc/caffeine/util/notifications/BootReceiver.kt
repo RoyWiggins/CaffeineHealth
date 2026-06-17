@@ -31,6 +31,7 @@ class BootReceiver : BroadcastReceiver() {
                         context = context,
                         entryId = entry.id,
                         drinkName = entry.drinkName,
+                        quantity = entry.quantity,
                         triggerAtMillis = entry.startedAtMillis,
                     )
                 }

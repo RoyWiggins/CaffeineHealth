@@ -46,6 +46,7 @@ class BackupManager(
                 put("delayMinutes", entry.delayMinutes)
                 put("startedAtMillis", entry.startedAtMillis)
                 put("durationMinutes", entry.durationMinutes)
+                put("taken", entry.taken)
             })
         }
         root.put("consumptionLog", logArray)
@@ -170,6 +171,7 @@ class BackupManager(
                     delayMinutes = obj.optInt("delayMinutes", 0),
                     startedAtMillis = obj.getLong("startedAtMillis"),
                     durationMinutes = obj.optInt("durationMinutes", 10),
+                    taken = obj.optBoolean("taken", true),
                 )
             )
         }

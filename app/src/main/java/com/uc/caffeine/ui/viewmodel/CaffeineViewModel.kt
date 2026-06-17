@@ -609,7 +609,7 @@ class CaffeineViewModel(application: Application) : AndroidViewModel(application
             val newId = logDao.logDrink(entry)
             triggerWidgetRefresh()
             com.uc.caffeine.util.notifications.NotificationScheduler.scheduleOrCancelDrinkReminder(
-                getApplication(), newId.toInt(), preset.name, startedAtMillis,
+                getApplication(), newId.toInt(), preset.name, quantity, startedAtMillis,
             )
             addScreenEventsChannel.send(AddScreenUiEvent.DrinkLogged(preset.name))
             val settings = userSettings.value
@@ -669,6 +669,8 @@ class CaffeineViewModel(application: Application) : AndroidViewModel(application
         viewModelScope.launch {
             val newCaffeineMg = calculateServingTotalCaffeine(quantity, unit.caffeineMg)
             val coercedDuration = durationMinutes.coerceAtLeast(1)
+            // Re-derive taken from the (possibly moved) time: future = scheduled.
+            val taken = startedAtMillis <= System.currentTimeMillis()
             logDao.updateEntryById(
                 entryId = entry.id,
                 caffeineMg = newCaffeineMg,
@@ -677,11 +679,12 @@ class CaffeineViewModel(application: Application) : AndroidViewModel(application
                 unitCaffeineMg = unit.caffeineMg,
                 startedAtMillis = startedAtMillis,
                 durationMinutes = coercedDuration,
+                taken = taken,
             )
             triggerWidgetRefresh()
             // Moving the entry re-arms (or clears) its "time to take it" reminder.
             com.uc.caffeine.util.notifications.NotificationScheduler.scheduleOrCancelDrinkReminder(
-                getApplication(), entry.id, entry.drinkName, startedAtMillis,
+                getApplication(), entry.id, entry.drinkName, quantity, startedAtMillis,
             )
             homeScreenEventsChannel.send(
                 HomeScreenUiEvent.LogActionCompleted("Updated ${entry.drinkName}")
@@ -708,6 +711,7 @@ class CaffeineViewModel(application: Application) : AndroidViewModel(application
                 id = 0,
                 startedAtMillis = System.currentTimeMillis(),
                 healthConnectRecordId = null,
+                taken = true,
             )
             val newId = logDao.logDrink(duplicate)
             triggerWidgetRefresh()
@@ -725,6 +729,21 @@ class CaffeineViewModel(application: Application) : AndroidViewModel(application
     private fun triggerWidgetRefresh() {
         viewModelScope.launch {
             CaffeineWidgetUpdater.update(getApplication<Application>())
+        }
+    }
+
+    fun markEntryTaken(entry: ConsumptionEntry) {
+        viewModelScope.launch {
+            logDao.markTaken(entry.id)
+            com.uc.caffeine.util.notifications.NotificationScheduler.cancelDrinkReminder(
+                getApplication(), entry.id,
+            )
+            triggerWidgetRefresh()
+            homeScreenEventsChannel.send(
+                HomeScreenUiEvent.LogActionCompleted(
+                    getApplication<Application>().getString(R.string.entry_marked_taken, entry.drinkName)
+                )
+            )
         }
     }
 
@@ -1297,6 +1316,8 @@ class CaffeineViewModel(application: Application) : AndroidViewModel(application
             delayMinutes = preset.delayMinutes,
             startedAtMillis = startedAtMillis,
             durationMinutes = durationMinutes.coerceAtLeast(1),
+            // Future-dated entries are scheduled, not yet taken.
+            taken = startedAtMillis <= System.currentTimeMillis(),
         )
     }
 

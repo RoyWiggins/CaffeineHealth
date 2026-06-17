@@ -505,7 +505,11 @@ fun HomeScreen(
                         userSettings = userSettings,
                         onEdit = { isEditing = true },
                         onDuplicate = { viewModel.duplicateLoggedEntry(entry) },
-                        onDelete = { viewModel.deleteLoggedEntry(entry) }
+                        onDelete = { viewModel.deleteLoggedEntry(entry) },
+                        onMarkTaken = {
+                            viewModel.markEntryTaken(entry)
+                            selectedEntry = null
+                        },
                     )
                 }
             }
@@ -850,10 +854,19 @@ private fun ConsumptionHistoryListItem(
             )
         },
         supportingContent = {
+            val meta = buildLoggedEntryMetaText(entry, userSettings)
             Text(
-                text = buildLoggedEntryMetaText(entry, userSettings),
+                text = if (entry.taken) {
+                    meta
+                } else {
+                    stringResource(R.string.home_scheduled_meta, meta)
+                },
                 style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                color = if (entry.taken) {
+                    MaterialTheme.colorScheme.onSurfaceVariant
+                } else {
+                    MaterialTheme.colorScheme.tertiary
+                },
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
@@ -1012,7 +1025,8 @@ private fun ConsumptionLogDetailSheet(
     userSettings: UserSettings,
     onEdit: () -> Unit,
     onDuplicate: () -> Unit,
-    onDelete: () -> Unit
+    onDelete: () -> Unit,
+    onMarkTaken: () -> Unit,
 ) {
     val haptics = rememberAppHaptics()
     val presentedDetail = detail.takeIf { canRevealDetailContent }
@@ -1111,6 +1125,24 @@ private fun ConsumptionLogDetailSheet(
                     detail = targetDetail,
                     userSettings = userSettings,
                 )
+            }
+        }
+
+        if (!entry.taken) {
+            Button(
+                onClick = {
+                    haptics.confirm()
+                    onMarkTaken()
+                },
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                Icon(
+                    imageVector = Icons.Default.CheckCircle,
+                    contentDescription = null,
+                    modifier = Modifier.size(18.dp),
+                )
+                Spacer(modifier = Modifier.width(8.dp))
+                Text(stringResource(R.string.home_action_mark_taken))
             }
         }
 

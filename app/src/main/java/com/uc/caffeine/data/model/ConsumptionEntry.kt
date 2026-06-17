@@ -54,6 +54,11 @@ data class ConsumptionEntry(
     // Non-null = this row was imported from another app via Health Connect (we don't own it).
     // Null = logged by this app (we own it and push it to HC).
     val healthConnectRecordId: String? = null,
+
+    // Whether the drink has actually been taken. Entries logged in the past start
+    // taken; entries scheduled for the future start not-taken and can be confirmed
+    // later (in-app or from the reminder notification).
+    val taken: Boolean = true,
 ) {
     val normalizedDurationMinutes: Int
         get() = durationMinutes.coerceAtLeast(1)

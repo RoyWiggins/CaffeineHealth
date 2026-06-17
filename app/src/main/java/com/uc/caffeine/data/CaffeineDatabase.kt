@@ -21,7 +21,7 @@ import kotlinx.coroutines.launch
 
 @Database(
     entities = [DrinkPreset::class, DrinkUnit::class, ConsumptionEntry::class, HeadacheEntry::class],
-    version = 13,
+    version = 14,
     exportSchema = false
 )
 abstract class CaffeineDatabase : RoomDatabase() {
@@ -69,6 +69,13 @@ abstract class CaffeineDatabase : RoomDatabase() {
             }
         }
 
+        private val MIGRATION_13_14 = object : Migration(13, 14) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                // Existing rows are historical, so default them to taken.
+                db.execSQL("ALTER TABLE consumption_log ADD COLUMN taken INTEGER NOT NULL DEFAULT 1")
+            }
+        }
+
         fun getDatabase(context: Context): CaffeineDatabase {
             return INSTANCE ?: synchronized(this) {
                 val instance = Room.databaseBuilder(
@@ -76,7 +83,13 @@ abstract class CaffeineDatabase : RoomDatabase() {
                     CaffeineDatabase::class.java,
                     "caffeine_database"
                 )
-                    .addMigrations(MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13)
+                    .addMigrations(
+                        MIGRATION_9_10,
+                        MIGRATION_10_11,
+                        MIGRATION_11_12,
+                        MIGRATION_12_13,
+                        MIGRATION_13_14,
+                    )
                     .addCallback(object : RoomDatabase.Callback() {
                         override fun onCreate(db: SupportSQLiteDatabase) {
                             super.onCreate(db)

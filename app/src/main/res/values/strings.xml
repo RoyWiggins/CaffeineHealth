@@ -197,9 +197,12 @@
     <string name="home_my_consumptions">My Consumptions</string>
     <string name="home_no_consumptions">No consumptions logged yet</string>
     <string name="home_started_meta">Started %1$s</string>
+    <string name="home_scheduled_meta">Scheduled • %1$s</string>
     <string name="home_action_edit">Edit</string>
     <string name="home_action_duplicate">Duplicate</string>
     <string name="home_action_delete">Delete</string>
+    <string name="home_action_mark_taken">Mark as taken</string>
+    <string name="entry_marked_taken">Marked %1$s as taken</string>
     <string name="home_adds_now">Adds %1$s now</string>
     <string name="home_drink_contribution_title">Drink contribution to caffeine levels</string>
     <string name="home_at_peak">At peak (%1$s)</string>
@@ -312,7 +315,10 @@
     <string name="notification_inactivity_body">It has been 5 days since you logged. Open the app to keep your tracker accurate.</string>
     <string name="notification_drink_reminder_title">Time to take it</string>
     <string name="notification_drink_reminder_body">%1$s is scheduled for now.</string>
+    <string name="notification_drink_reminder_body_qty">%1$d × %2$s is scheduled for now.</string>
     <string name="notification_drink_reminder_body_generic">Your scheduled drink is due now.</string>
+    <string name="notification_action_mark_taken">Mark taken</string>
+    <string name="notification_action_dismiss">Dismiss</string>
 
     <!-- Widgets (in-content text) -->
     <string name="widget_caffeine_now_inline_label">Caffeine Now</string>
