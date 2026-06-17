@@ -4,7 +4,21 @@ import androidx.room.Entity
 import androidx.room.PrimaryKey
 
 const val DEFAULT_CONSUMPTION_DURATION_MINUTES = 10
+
+// Pills/capsules are swallowed in one go, so they default to the shortest
+// meaningful window rather than the sip-over-time default used for drinks.
+const val DEFAULT_PILL_DURATION_MINUTES = 1
 private const val MINUTE_IN_MILLIS = 60_000L
+
+/** The default "time to finish" for a drink in [category] — instant for pills. */
+fun defaultConsumptionDurationMinutes(category: String): Int {
+    val key = category.trim().lowercase()
+    return if (key == "pill" || key == "pills") {
+        DEFAULT_PILL_DURATION_MINUTES
+    } else {
+        DEFAULT_CONSUMPTION_DURATION_MINUTES
+    }
+}
 
 // This table stores EVERY drink the user logs — one row per drink consumed
 // This is how we get:

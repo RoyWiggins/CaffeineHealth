@@ -88,7 +88,7 @@ import androidx.lifecycle.lifecycleScope
 import com.uc.caffeine.LocalSnackbarHostState
 import com.uc.caffeine.R
 import com.uc.caffeine.data.model.ConsumptionEntry
-import com.uc.caffeine.data.model.DEFAULT_CONSUMPTION_DURATION_MINUTES
+import com.uc.caffeine.data.model.defaultConsumptionDurationMinutes
 import com.uc.caffeine.data.model.DrinkPreset
 import com.uc.caffeine.data.model.DrinkUnit
 import com.uc.caffeine.data.model.RecentDrink
@@ -602,7 +602,7 @@ private fun AddDrinkServingSheet(
     var quantity by remember(preset.id) { mutableIntStateOf(1) }
     var startedAtMillis by remember(preset.id) { mutableStateOf(System.currentTimeMillis()) }
     var durationMinutes by remember(preset.id) {
-        mutableIntStateOf(DEFAULT_CONSUMPTION_DURATION_MINUTES)
+        mutableIntStateOf(defaultConsumptionDurationMinutes(preset.category))
     }
     val defaultUnit = remember(units) {
         units?.firstOrNull { it.isDefault } ?: units?.firstOrNull()

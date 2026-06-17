@@ -26,7 +26,7 @@ import com.uc.caffeine.ui.onboarding.SmokingHabit
 import com.uc.caffeine.ui.onboarding.WeightUnit
 import com.uc.caffeine.R
 import com.uc.caffeine.data.model.ConsumptionEntry
-import com.uc.caffeine.data.model.DEFAULT_CONSUMPTION_DURATION_MINUTES
+import com.uc.caffeine.data.model.defaultConsumptionDurationMinutes
 import com.uc.caffeine.data.model.DrinkPreset
 import com.uc.caffeine.data.model.DrinkUnit
 import com.uc.caffeine.data.model.HeadacheEntry
@@ -579,7 +579,7 @@ class CaffeineViewModel(application: Application) : AndroidViewModel(application
                 quantity = 1,
                 unit = defaultUnit,
                 startedAtMillis = System.currentTimeMillis(),
-                durationMinutes = DEFAULT_CONSUMPTION_DURATION_MINUTES,
+                durationMinutes = defaultConsumptionDurationMinutes(preset.category),
             )
             val newId = logDao.logDrink(entry)
             triggerWidgetRefresh()
