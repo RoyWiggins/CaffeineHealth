@@ -155,6 +155,12 @@ fun HomeScreen(
     val userSettings by viewModel.userSettings.collectAsStateWithLifecycle()
     val groupedConsumptionEntries by viewModel.groupedConsumptionEntries.collectAsStateWithLifecycle()
     val homeTimeline by viewModel.homeTimeline.collectAsStateWithLifecycle()
+    val nearTermDoses by viewModel.nearTermDoses.collectAsStateWithLifecycle()
+    val activeDose = remember(nearTermDoses, liveNowMillis) {
+        nearTermDoses.firstOrNull {
+            it.startedAtMillis in (liveNowMillis - 10L * 60 * 1000)..(liveNowMillis + 2L * 60 * 60 * 1000)
+        }
+    }
     val showWhatsNew by viewModel.showWhatsNew.collectAsStateWithLifecycle()
     val radialData by viewModel.radialCaffeineData.collectAsStateWithLifecycle()
 
@@ -219,6 +225,17 @@ fun HomeScreen(
             }
         }
     ) { bottomPadding ->
+        AnimatedVisibility(visible = activeDose != null) {
+            activeDose?.let { dose ->
+                DoseReminderBanner(
+                    entry = dose,
+                    nowMillis = liveNowMillis,
+                    onMarkTaken = { viewModel.markEntryTaken(dose) },
+                    modifier = Modifier.padding(bottom = 12.dp),
+                )
+            }
+        }
+
         ElevatedCard(
             modifier = Modifier
                 .fillMaxWidth()
@@ -939,6 +956,99 @@ private fun SleepForecastCard(
                 )
             }
         }
+    }
+}
+
+@Composable
+private fun DoseReminderBanner(
+    entry: ConsumptionEntry,
+    nowMillis: Long,
+    onMarkTaken: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val remainingMillis = entry.startedAtMillis - nowMillis
+    val overdue = remainingMillis <= 0L
+
+    val container = if (overdue) {
+        MaterialTheme.colorScheme.errorContainer
+    } else {
+        MaterialTheme.colorScheme.primaryContainer
+    }
+    val onContainer = if (overdue) {
+        MaterialTheme.colorScheme.onErrorContainer
+    } else {
+        MaterialTheme.colorScheme.onPrimaryContainer
+    }
+
+    val timerText = doseTimerText(remainingMillis)
+    val serving = if (entry.unitKey.isNotBlank()) {
+        formatServingSummary(entry.quantity, entry.unitKey)
+    } else {
+        null
+    }
+    val description = listOfNotNull(
+        entry.drinkName,
+        serving,
+        stringResource(R.string.caffeine_mg, entry.caffeineMg),
+    ).joinToString(" • ")
+
+    ElevatedCard(
+        modifier = modifier.fillMaxWidth(),
+        colors = CardDefaults.elevatedCardColors(containerColor = container),
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp, vertical = 12.dp),
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            ExpressiveIconBadge(index = entry.id, size = 40.dp) {
+                DrinkIcon(
+                    imageName = entry.imageName,
+                    emoji = entry.emoji,
+                    contentDescription = entry.drinkName,
+                    modifier = Modifier.size(24.dp),
+                    emojiSize = MaterialTheme.typography.titleMedium.fontSize,
+                )
+            }
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = timerText,
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold,
+                    color = onContainer,
+                )
+                Text(
+                    text = description,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = onContainer.copy(alpha = 0.85f),
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+            Button(onClick = onMarkTaken) {
+                Text(stringResource(R.string.notification_action_mark_taken))
+            }
+        }
+    }
+}
+
+@Composable
+private fun doseTimerText(remainingMillis: Long): String {
+    if (remainingMillis <= 0L) {
+        val lateMinutes = (-remainingMillis / 60_000L).toInt()
+        return if (lateMinutes < 1) {
+            stringResource(R.string.dose_banner_due_now)
+        } else {
+            stringResource(R.string.dose_banner_overdue, lateMinutes)
+        }
+    }
+    val totalSeconds = remainingMillis / 1000L
+    return if (totalSeconds >= 3600L) {
+        stringResource(R.string.dose_banner_in_hm, (totalSeconds / 3600L).toInt(), ((totalSeconds % 3600L) / 60L).toInt())
+    } else {
+        stringResource(R.string.dose_banner_in_ms, (totalSeconds / 60L).toInt(), (totalSeconds % 60L).toInt())
     }
 }
 

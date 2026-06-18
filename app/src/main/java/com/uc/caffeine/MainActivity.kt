@@ -49,6 +49,8 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Add
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -255,28 +257,9 @@ internal fun MainAppShell(
                         .padding(bottom = 16.dp),
                     contentAlignment = Alignment.BottomCenter,
                 ) {
-                    Column(
-                        horizontalAlignment = Alignment.CenterHorizontally,
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
                     ) {
-                        AnimatedVisibility(
-                            visible = shouldShowHomeFab,
-                            enter = fadeIn(tween(300)) + expandVertically(
-                                expandFrom = Alignment.Bottom,
-                                animationSpec = tween(300),
-                            ),
-                            exit = shrinkVertically(
-                                shrinkTowards = Alignment.Bottom,
-                                animationSpec = tween(250),
-                            ) + fadeOut(tween(250)),
-                        ) {
-                            AddConsumptionButton(
-                                modifier = Modifier.padding(bottom = 8.dp),
-                                onClick = {
-                                    haptics.confirm()
-                                    backStack.add(AddRoute)
-                                },
-                            )
-                        }
                         val buttonBounds = remember { mutableStateMapOf<Int, androidx.compose.ui.geometry.Rect>() }
                         val currentIndex = toolbarDestinations.indexOf(selectedToolbarDestination)
                         val targetRect = buttonBounds[currentIndex]
@@ -388,6 +371,26 @@ internal fun MainAppShell(
                             }
                             }
                         }
+
+                        AnimatedVisibility(
+                            visible = shouldShowHomeFab,
+                            enter = fadeIn(tween(300)) + expandHorizontally(
+                                expandFrom = Alignment.Start,
+                                animationSpec = tween(300),
+                            ),
+                            exit = shrinkHorizontally(
+                                shrinkTowards = Alignment.Start,
+                                animationSpec = tween(250),
+                            ) + fadeOut(tween(250)),
+                        ) {
+                            AddConsumptionButton(
+                                modifier = Modifier.padding(start = 12.dp),
+                                onClick = {
+                                    haptics.confirm()
+                                    backStack.add(AddRoute)
+                                },
+                            )
+                        }
                     }
                 }
             }
@@ -492,43 +495,19 @@ private fun AddConsumptionButton(
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    val infiniteTransition = rememberInfiniteTransition(label = "burst_rotation")
-    val burstRotation by infiniteTransition.animateFloat(
-        initialValue = 0f,
-        targetValue = 360f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(durationMillis = 12_000, easing = LinearEasing),
-            repeatMode = RepeatMode.Restart,
-        ),
-        label = "burst_rotation",
-    )
-
     Surface(
         onClick = onClick,
-        modifier = modifier.height(72.dp),
-        shape = RoundedCornerShape(50),
-        color = MaterialTheme.colorScheme.primaryContainer,
-        contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
+        modifier = modifier.size(64.dp),
+        shape = CircleShape,
+        color = MaterialTheme.colorScheme.primary,
+        contentColor = MaterialTheme.colorScheme.onPrimary,
         shadowElevation = 6.dp,
     ) {
-        Row(
-            modifier = Modifier.padding(horizontal = 24.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(10.dp),
-        ) {
-            Box(
-                modifier = Modifier
-                    .size(18.dp)
-                    .graphicsLayer { rotationZ = burstRotation }
-                    .clip(MaterialShapes.SoftBurst.toShape())
-                    .background(Color.White),
-            )
-            Text(
-                text = stringResource(R.string.main_add_consumption),
-                style = MaterialTheme.typography.titleMedium.copy(
-                    fontFamily = MontserratFamily,
-                    fontWeight = FontWeight.Bold,
-                ),
+        Box(contentAlignment = Alignment.Center) {
+            Icon(
+                imageVector = Icons.Filled.Add,
+                contentDescription = stringResource(R.string.main_add_consumption),
+                modifier = Modifier.size(30.dp),
             )
         }
     }

@@ -440,6 +440,24 @@ class CaffeineViewModel(application: Application) : AndroidViewModel(application
         initialValue = CaffeineTrend.STEADY,
     )
 
+    // Not-yet-taken doses near their scheduled time — drives the Home dose banner.
+    // A broad window here (the UI narrows to [-10 min, +2 h]); refreshed each minute.
+    val nearTermDoses: StateFlow<List<ConsumptionEntry>> = combine(
+        allConsumptionEntries,
+        chartTickerFlow,
+    ) { entries, now ->
+        val from = now - 60 * 60_000L
+        val to = now + 3 * 60 * 60_000L
+        entries.asSequence()
+            .filter { !it.taken && it.startedAtMillis in from..to }
+            .sortedBy { it.startedAtMillis }
+            .toList()
+    }.stateIn(
+        scope = viewModelScope,
+        started = SharingStarted.WhileSubscribed(5_000),
+        initialValue = emptyList()
+    )
+
     // Merged drink + headache timeline for the Home screen, grouped by day.
     // Each headache carries the caffeine level inferred at the time it occurred.
     val homeTimeline: StateFlow<Map<LocalDate, List<HomeTimelineItem>>> = combine(
