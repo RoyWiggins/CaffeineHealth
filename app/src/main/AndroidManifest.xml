@@ -8,6 +8,14 @@
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED"/>
 
+    <!-- Exact alarms so scheduled dose/medication reminders fire on time.
+         SCHEDULE_EXACT_ALARM is auto-granted on API 31-32; USE_EXACT_ALARM
+         covers API 33+ (the app's reminders are a core, user-facing feature). -->
+    <uses-permission
+        android:name="android.permission.SCHEDULE_EXACT_ALARM"
+        android:maxSdkVersion="32" />
+    <uses-permission android:name="android.permission.USE_EXACT_ALARM" />
+
     <queries>
         <package android:name="com.google.android.apps.healthdata" />
     </queries>
