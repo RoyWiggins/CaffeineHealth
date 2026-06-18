@@ -161,6 +161,8 @@ fun HomeScreen(
             it.startedAtMillis in (liveNowMillis - 10L * 60 * 1000)..(liveNowMillis + 2L * 60 * 60 * 1000)
         }
     }
+    // Collapsed = banner hidden, timer shown as a chip in the top bar. Resets for each new dose.
+    var doseBannerCollapsed by remember(activeDose?.id) { mutableStateOf(false) }
     val showWhatsNew by viewModel.showWhatsNew.collectAsStateWithLifecycle()
     val radialData by viewModel.radialCaffeineData.collectAsStateWithLifecycle()
 
@@ -191,6 +193,15 @@ fun HomeScreen(
 
     CaffeineScreenScaffold(
         title = stringResource(R.string.home_title),
+        titleTrailing = {
+            val dose = activeDose
+            if (dose != null && doseBannerCollapsed) {
+                DoseTimerChip(
+                    remainingMillis = dose.startedAtMillis - liveNowMillis,
+                    onClick = { haptics.toggle(); doseBannerCollapsed = false },
+                )
+            }
+        },
         actions = {
             IconButton(onClick = { haptics.toggle(); showReportHeadache = true }) {
                 Icon(
@@ -225,12 +236,13 @@ fun HomeScreen(
             }
         }
     ) { bottomPadding ->
-        AnimatedVisibility(visible = activeDose != null) {
+        AnimatedVisibility(visible = activeDose != null && !doseBannerCollapsed) {
             activeDose?.let { dose ->
                 DoseReminderBanner(
                     entry = dose,
                     nowMillis = liveNowMillis,
                     onMarkTaken = { viewModel.markEntryTaken(dose) },
+                    onCollapse = { doseBannerCollapsed = true },
                     modifier = Modifier.padding(bottom = 12.dp),
                 )
             }
@@ -964,6 +976,7 @@ private fun DoseReminderBanner(
     entry: ConsumptionEntry,
     nowMillis: Long,
     onMarkTaken: () -> Unit,
+    onCollapse: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val remainingMillis = entry.startedAtMillis - nowMillis
@@ -980,19 +993,8 @@ private fun DoseReminderBanner(
         MaterialTheme.colorScheme.onPrimaryContainer
     }
 
-    val timerText = doseTimerText(remainingMillis)
-    val serving = if (entry.unitKey.isNotBlank()) {
-        formatServingSummary(entry.quantity, entry.unitKey)
-    } else {
-        null
-    }
-    val description = listOfNotNull(
-        entry.drinkName,
-        serving,
-        stringResource(R.string.caffeine_mg, entry.caffeineMg),
-    ).joinToString(" • ")
-
     ElevatedCard(
+        onClick = onCollapse,
         modifier = modifier.fillMaxWidth(),
         colors = CardDefaults.elevatedCardColors(containerColor = container),
     ) {
@@ -1014,41 +1016,79 @@ private fun DoseReminderBanner(
             }
             Column(modifier = Modifier.weight(1f)) {
                 Text(
-                    text = timerText,
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.Bold,
+                    text = doseTimerText(remainingMillis),
+                    style = MaterialTheme.typography.titleMedium.copy(
+                        fontWeight = FontWeight.Bold,
+                        // Tabular figures keep the ticking countdown from jittering.
+                        fontFeatureSettings = "tnum",
+                    ),
                     color = onContainer,
+                    maxLines = 1,
+                    softWrap = false,
                 )
                 Text(
-                    text = description,
-                    style = MaterialTheme.typography.bodySmall,
+                    text = doseLabel(entry),
+                    style = MaterialTheme.typography.bodyMedium,
                     color = onContainer.copy(alpha = 0.85f),
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                 )
             }
             Button(onClick = onMarkTaken) {
-                Text(stringResource(R.string.notification_action_mark_taken))
+                Text(stringResource(R.string.dose_banner_taken))
             }
         }
     }
 }
 
 @Composable
+private fun DoseTimerChip(
+    remainingMillis: Long,
+    onClick: () -> Unit,
+) {
+    val overdue = remainingMillis <= 0L
+    Surface(
+        onClick = onClick,
+        shape = RoundedCornerShape(50),
+        color = if (overdue) MaterialTheme.colorScheme.errorContainer else MaterialTheme.colorScheme.primaryContainer,
+        contentColor = if (overdue) MaterialTheme.colorScheme.onErrorContainer else MaterialTheme.colorScheme.onPrimaryContainer,
+    ) {
+        Text(
+            text = doseTimerText(remainingMillis),
+            modifier = Modifier.padding(horizontal = 12.dp, vertical = 5.dp),
+            style = MaterialTheme.typography.labelLarge.copy(
+                fontWeight = FontWeight.Bold,
+                fontFeatureSettings = "tnum",
+            ),
+            maxLines = 1,
+            softWrap = false,
+        )
+    }
+}
+
+@Composable
+private fun doseLabel(entry: ConsumptionEntry): String =
+    if (entry.quantity >= 2) {
+        stringResource(R.string.dose_label_multi, entry.quantity, entry.drinkName)
+    } else {
+        entry.drinkName
+    }
+
+@Composable
 private fun doseTimerText(remainingMillis: Long): String {
     if (remainingMillis <= 0L) {
         val lateMinutes = (-remainingMillis / 60_000L).toInt()
         return if (lateMinutes < 1) {
-            stringResource(R.string.dose_banner_due_now)
+            stringResource(R.string.dose_timer_now)
         } else {
-            stringResource(R.string.dose_banner_overdue, lateMinutes)
+            stringResource(R.string.dose_timer_ago, lateMinutes)
         }
     }
     val totalSeconds = remainingMillis / 1000L
     return if (totalSeconds >= 3600L) {
-        stringResource(R.string.dose_banner_in_hm, (totalSeconds / 3600L).toInt(), ((totalSeconds % 3600L) / 60L).toInt())
+        stringResource(R.string.dose_timer_hm, (totalSeconds / 3600L).toInt(), ((totalSeconds % 3600L) / 60L).toInt())
     } else {
-        stringResource(R.string.dose_banner_in_ms, (totalSeconds / 60L).toInt(), (totalSeconds % 60L).toInt())
+        stringResource(R.string.dose_timer_ms, (totalSeconds / 60L).toInt(), (totalSeconds % 60L).toInt())
     }
 }
 
