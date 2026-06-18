@@ -481,6 +481,8 @@ object ChartDataGenerator {
                             emoji = entry.emoji,
                             imageName = entry.imageName,
                             caffeineMg = entry.caffeineMg,
+                            // Past-due but not confirmed taken — flag for a red border.
+                            overdue = !entry.taken && entry.startedAtMillis <= currentTime,
                         )
                     },
                     timestampMillis = groupedEntries.first().startedAtMillis,
@@ -554,6 +556,7 @@ data class ChartMarkerEntry(
     val emoji: String,
     val imageName: String,
     val caffeineMg: Int,
+    val overdue: Boolean = false,
 )
 
 data class ChartConsumptionMarker(

@@ -428,7 +428,8 @@ fun CaffeineChart(
         else chartData.headacheMarkers.map { it.copy(yValue = caffeineToAxisSpace(it.yValue, true, logFloor)) }
     }
 
-    val consumptionDecoration = remember(displayConsumptionMarkers, axisMaxY, containerColor, strokeColor, dotColor, badgeColor, badgeTextColor) {
+    val overdueColor = MaterialTheme.colorScheme.error.toArgb()
+    val consumptionDecoration = remember(displayConsumptionMarkers, axisMaxY, containerColor, strokeColor, dotColor, badgeColor, badgeTextColor, overdueColor) {
         ConsumptionImageDecoration(
             markers = displayConsumptionMarkers,
             appContext = context,
@@ -439,6 +440,7 @@ fun CaffeineChart(
             dotColor = dotColor,
             badgeColor = badgeColor,
             textColor = badgeTextColor,
+            overdueColor = overdueColor,
         ) { xValue, canvasOffset ->
             markerPositions[xValue] = Offset(canvasOffset.x + chartInsetPx, canvasOffset.y + chartInsetPx)
         }
@@ -1334,6 +1336,7 @@ private class ConsumptionImageDecoration(
     private val dotColor: Int,
     private val badgeColor: Int,
     private val textColor: Int,
+    private val overdueColor: Int,
     private val onPositionDrawn: (xValue: Double, center: Offset) -> Unit,
 ) : Decoration {
     private fun CartesianDrawingContext.yToCanvas(yValue: Double): Float {
@@ -1411,8 +1414,12 @@ private class ConsumptionImageDecoration(
                     canvas.nativeCanvas.drawText(emoji, canvasX, imageCenterY - yOff, emojiPaint)
                 }
 
-                strokePaint.color = strokeColor
+                // Past-due, not-yet-taken drinks get a bold red border.
+                val overdue = marker.entries.any { it.overdue }
+                strokePaint.color = if (overdue) overdueColor else strokeColor
+                strokePaint.strokeWidth = if (overdue) 2.5.dp.pixels else 1.5.dp.pixels
                 canvas.nativeCanvas.drawCircle(canvasX, imageCenterY, imageRadius, strokePaint)
+                strokePaint.strokeWidth = 1.5.dp.pixels
 
                 fillPaint.color = dotColor
                 canvas.nativeCanvas.drawCircle(canvasX, canvasY, dotRadius, fillPaint)
