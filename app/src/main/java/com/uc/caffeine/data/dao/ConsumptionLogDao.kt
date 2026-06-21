@@ -3,6 +3,7 @@ package com.uc.caffeine.data.dao
 import androidx.room.Dao
 import androidx.room.Insert
 import androidx.room.Query
+import androidx.room.Update
 import com.uc.caffeine.data.model.ConsumptionEntry
 import com.uc.caffeine.data.model.RecentDrink
 import kotlinx.coroutines.flow.Flow
@@ -40,6 +41,10 @@ interface ConsumptionLogDao {
 
     @Query("UPDATE consumption_log SET taken = 1 WHERE id = :entryId")
     suspend fun markTaken(entryId: Int)
+
+    // Full-entity update — used when editing changes the drink type (identity fields).
+    @Update
+    suspend fun updateEntry(entry: ConsumptionEntry)
 
     @Query("DELETE FROM consumption_log WHERE id = :entryId")
     suspend fun deleteEntryById(entryId: Int)

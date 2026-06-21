@@ -16,7 +16,9 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
@@ -30,6 +32,7 @@ import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.ExpandLess
 import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.automirrored.filled.ShowChart
+import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Sick
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.ButtonGroupDefaults
@@ -84,6 +87,7 @@ import com.uc.caffeine.data.UserSettings
 import com.uc.caffeine.data.model.ConsumptionEntry
 import com.uc.caffeine.data.model.HeadacheEntry
 import com.uc.caffeine.data.model.HeadacheSeverity
+import com.uc.caffeine.data.model.DrinkPreset
 import com.uc.caffeine.data.model.DrinkUnit
 import com.uc.caffeine.ui.components.CaffeineChart
 import com.uc.caffeine.ui.components.CaffeineRadialView
@@ -516,9 +520,10 @@ fun HomeScreen(
                         viewModel = viewModel,
                         userSettings = userSettings,
                         onBack = { isEditing = false },
-                        onSave = { quantity, unit, startedAtMillis, durationMinutes ->
+                        onSave = { newPreset, quantity, unit, startedAtMillis, durationMinutes ->
                             viewModel.updateLoggedEntry(
                                 entry = entry,
+                                newPreset = newPreset,
                                 quantity = quantity,
                                 unit = unit,
                                 startedAtMillis = startedAtMillis,
@@ -1579,10 +1584,31 @@ private fun EditConsumptionEntrySheet(
     viewModel: CaffeineViewModel,
     userSettings: UserSettings,
     onBack: () -> Unit,
-    onSave: (Int, DrinkUnit, Long, Int) -> Unit
+    onSave: (DrinkPreset?, Int, DrinkUnit, Long, Int) -> Unit
 ) {
-    val availableUnits by produceState<List<DrinkUnit>?>(initialValue = null, key1 = entry.id, key2 = entry.presetItemId) {
-        value = viewModel.getUnitsForPresetItemId(entry.presetItemId)
+    // null = keep the entry's original drink; non-null = the user picked a new type.
+    var selectedPreset by remember(entry.id) { mutableStateOf<DrinkPreset?>(null) }
+    var pickingDrink by remember(entry.id) { mutableStateOf(false) }
+
+    if (pickingDrink) {
+        DrinkTypePicker(
+            viewModel = viewModel,
+            onSelect = {
+                selectedPreset = it
+                pickingDrink = false
+            },
+            onBack = { pickingDrink = false },
+        )
+        return
+    }
+
+    val displayName = selectedPreset?.name ?: entry.drinkName
+    val displayEmoji = selectedPreset?.emoji ?: entry.emoji
+    val displayImage = selectedPreset?.imageName ?: entry.imageName
+
+    val availableUnits by produceState<List<DrinkUnit>?>(initialValue = null, key1 = entry.id, key2 = selectedPreset?.id) {
+        value = selectedPreset?.let { viewModel.getUnitsForDrink(it.id) }
+            ?: viewModel.getUnitsForPresetItemId(entry.presetItemId)
     }
     var quantity by remember(entry.id) {
         mutableStateOf(entry.quantity.coerceAtLeast(1))
@@ -1593,6 +1619,7 @@ private fun EditConsumptionEntrySheet(
     var durationMinutes by remember(entry.id) {
         mutableIntStateOf(entry.normalizedDurationMinutes)
     }
+    // Fallback serving only matters for the original drink when it has no preset units.
     val fallbackUnit = remember(entry) {
         if (entry.unitKey.isBlank()) {
             null
@@ -1607,23 +1634,24 @@ private fun EditConsumptionEntrySheet(
             )
         }
     }
-    val initialUnit = remember(availableUnits, entry.unitKey, entry.unitCaffeineMg, fallbackUnit) {
+    val initialUnit = remember(availableUnits, selectedPreset?.id, entry.unitKey, entry.unitCaffeineMg, fallbackUnit) {
         val resolvedUnits = availableUnits.orEmpty()
-        if (resolvedUnits.isEmpty()) {
-            fallbackUnit
-        } else {
-            findMatchingUnit(resolvedUnits, entry.unitKey, entry.unitCaffeineMg)
+        when {
+            // A freshly picked type defaults to that drink's default serving.
+            selectedPreset != null -> resolvedUnits.firstOrNull { it.isDefault } ?: resolvedUnits.firstOrNull()
+            resolvedUnits.isEmpty() -> fallbackUnit
+            else -> findMatchingUnit(resolvedUnits, entry.unitKey, entry.unitCaffeineMg)
         }
     }
-    val displayedUnits = remember(availableUnits, fallbackUnit) {
+    val displayedUnits = remember(availableUnits, selectedPreset?.id, fallbackUnit) {
         val resolvedUnits = availableUnits.orEmpty()
-        if (resolvedUnits.isEmpty()) {
+        if (resolvedUnits.isEmpty() && selectedPreset == null) {
             listOfNotNull(fallbackUnit)
         } else {
             resolvedUnits
         }
     }
-    var selectedUnitKey by remember(entry.id, availableUnits) {
+    var selectedUnitKey by remember(entry.id, selectedPreset?.id, availableUnits) {
         mutableStateOf(initialUnit?.unitKey)
     }
     val selectedUnit = remember(displayedUnits, selectedUnitKey, initialUnit) {
@@ -1656,7 +1684,7 @@ private fun EditConsumptionEntrySheet(
                 )
             }
             Text(
-                text = stringResource(R.string.home_edit_drink, entry.drinkName),
+                text = stringResource(R.string.home_edit_drink, displayName),
                 style = MaterialTheme.typography.titleLarge,
                 modifier = Modifier.weight(1f),
                 maxLines = 1,
@@ -1667,11 +1695,46 @@ private fun EditConsumptionEntrySheet(
                 onClick = {
                     selectedUnit?.let { unit ->
                         haptics.navigation()
-                        onSave(quantity, unit, startedAtMillis, durationMinutes)
+                        onSave(selectedPreset, quantity, unit, startedAtMillis, durationMinutes)
                     }
                 }
             ) {
                 Text(stringResource(R.string.action_save))
+            }
+        }
+
+        // Drink type — tap Change to swap this entry for a different drink.
+        Surface(
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(20.dp),
+            color = MaterialTheme.colorScheme.surfaceContainerHigh,
+        ) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 12.dp, vertical = 10.dp),
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                ExpressiveIconBadge(index = entry.id, size = 40.dp) {
+                    DrinkIcon(
+                        imageName = displayImage,
+                        emoji = displayEmoji,
+                        contentDescription = displayName,
+                        modifier = Modifier.size(24.dp),
+                        emojiSize = MaterialTheme.typography.titleMedium.fontSize,
+                    )
+                }
+                Text(
+                    text = displayName,
+                    style = MaterialTheme.typography.bodyLarge,
+                    modifier = Modifier.weight(1f),
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                TextButton(onClick = { haptics.navigation(); pickingDrink = true }) {
+                    Text(stringResource(R.string.home_edit_change_drink))
+                }
             }
         }
 
@@ -1730,6 +1793,110 @@ private fun EditConsumptionEntrySheet(
         )
 
         Spacer(modifier = Modifier.height(12.dp))
+    }
+}
+
+@Composable
+private fun DrinkTypePicker(
+    viewModel: CaffeineViewModel,
+    onSelect: (DrinkPreset) -> Unit,
+    onBack: () -> Unit,
+) {
+    val haptics = rememberAppHaptics()
+    val presets by viewModel.drinkPresets.collectAsStateWithLifecycle()
+    var query by remember { mutableStateOf("") }
+    val filtered = remember(presets, query) {
+        if (query.isBlank()) {
+            presets
+        } else {
+            presets.filter {
+                it.name.contains(query, ignoreCase = true) || it.brand.contains(query, ignoreCase = true)
+            }
+        }
+    }
+
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 20.dp, vertical = 4.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            FilledTonalIconButton(onClick = { haptics.navigation(); onBack() }) {
+                Icon(
+                    imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                    contentDescription = stringResource(R.string.action_back),
+                )
+            }
+            Text(
+                text = stringResource(R.string.home_edit_choose_drink),
+                style = MaterialTheme.typography.titleLarge,
+                modifier = Modifier.padding(start = 4.dp),
+            )
+        }
+
+        OutlinedTextField(
+            value = query,
+            onValueChange = { query = it },
+            label = { Text(stringResource(R.string.add_search_placeholder)) },
+            leadingIcon = { Icon(Icons.Filled.Search, contentDescription = null) },
+            singleLine = true,
+            modifier = Modifier.fillMaxWidth(),
+        )
+
+        LazyColumn(
+            modifier = Modifier
+                .fillMaxWidth()
+                .heightIn(max = 420.dp),
+            contentPadding = PaddingValues(bottom = 12.dp),
+            verticalArrangement = Arrangement.spacedBy(4.dp),
+        ) {
+            items(filtered, key = { it.id }) { preset ->
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable { haptics.confirm(); onSelect(preset) }
+                        .padding(vertical = 8.dp),
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    ExpressiveIconBadge(index = preset.id, size = 40.dp) {
+                        DrinkIcon(
+                            imageName = preset.imageName,
+                            emoji = preset.emoji,
+                            contentDescription = preset.name,
+                            modifier = Modifier.size(24.dp),
+                            emojiSize = MaterialTheme.typography.titleMedium.fontSize,
+                        )
+                    }
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = preset.name,
+                            style = MaterialTheme.typography.bodyLarge,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                        if (preset.brand.isNotBlank()) {
+                            Text(
+                                text = preset.brand,
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                            )
+                        }
+                    }
+                    Text(
+                        text = stringResource(R.string.caffeine_mg_compact, preset.defaultCaffeineMg),
+                        style = MaterialTheme.typography.titleSmall,
+                        color = MaterialTheme.colorScheme.primary,
+                    )
+                }
+            }
+        }
     }
 }
 

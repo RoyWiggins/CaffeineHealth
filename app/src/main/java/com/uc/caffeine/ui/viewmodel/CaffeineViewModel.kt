@@ -679,6 +679,7 @@ class CaffeineViewModel(application: Application) : AndroidViewModel(application
 
     fun updateLoggedEntry(
         entry: ConsumptionEntry,
+        newPreset: DrinkPreset?,
         quantity: Int,
         unit: DrinkUnit,
         startedAtMillis: Long,
@@ -689,8 +690,15 @@ class CaffeineViewModel(application: Application) : AndroidViewModel(application
             val coercedDuration = durationMinutes.coerceAtLeast(1)
             // Re-derive taken from the (possibly moved) time: future = scheduled.
             val taken = startedAtMillis <= System.currentTimeMillis()
-            logDao.updateEntryById(
-                entryId = entry.id,
+            // newPreset != null when the drink *type* was changed during editing —
+            // carry its identity (name, emoji, image, absorption, delay) onto the row.
+            val updated = entry.copy(
+                drinkName = newPreset?.name ?: entry.drinkName,
+                emoji = newPreset?.emoji ?: entry.emoji,
+                imageName = newPreset?.imageName ?: entry.imageName,
+                presetItemId = newPreset?.itemId ?: entry.presetItemId,
+                absorptionRate = newPreset?.absorptionRate ?: entry.absorptionRate,
+                delayMinutes = newPreset?.delayMinutes ?: entry.delayMinutes,
                 caffeineMg = newCaffeineMg,
                 quantity = quantity,
                 unitKey = unit.unitKey,
@@ -699,26 +707,19 @@ class CaffeineViewModel(application: Application) : AndroidViewModel(application
                 durationMinutes = coercedDuration,
                 taken = taken,
             )
+            logDao.updateEntry(updated)
             triggerWidgetRefresh()
             // Moving the entry re-arms (or clears) its "time to take it" reminder.
             com.uc.caffeine.util.notifications.NotificationScheduler.scheduleOrCancelDrinkReminder(
-                getApplication(), entry.id, entry.drinkName, quantity, startedAtMillis,
+                getApplication(), updated.id, updated.drinkName, quantity, startedAtMillis,
             )
             homeScreenEventsChannel.send(
-                HomeScreenUiEvent.LogActionCompleted("Updated ${entry.drinkName}")
+                HomeScreenUiEvent.LogActionCompleted("Updated ${updated.drinkName}")
             )
             val settings = userSettings.value
             if (settings.healthConnectEnabled) {
-                val updatedEntry = entry.copy(
-                    caffeineMg = newCaffeineMg,
-                    quantity = quantity,
-                    unitKey = unit.unitKey,
-                    unitCaffeineMg = unit.caffeineMg,
-                    startedAtMillis = startedAtMillis,
-                    durationMinutes = coercedDuration,
-                )
                 val zoneId = java.time.ZoneId.of(settings.timeZoneId)
-                runCatching { healthConnectManager.writeEntry(updatedEntry, zoneId) }
+                runCatching { healthConnectManager.writeEntry(updated, zoneId) }
             }
         }
     }
