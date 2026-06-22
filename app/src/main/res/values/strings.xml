@@ -604,6 +604,9 @@
     <string name="home_circular_mg_unit">mg</string>
     <string name="home_circular_threshold_format">of %1$d mg</string>
     <string name="home_radial_empty">No caffeine logged in the last 7 days</string>
+    <string name="chart_y_axis_auto">Auto</string>
+    <string name="chart_y_axis_raise_cd">Raise chart maximum</string>
+    <string name="chart_y_axis_lower_cd">Lower chart maximum</string>
     <string name="home_view_toggle_to_circular_cd">Switch to circular view</string>
     <string name="home_view_toggle_to_graph_cd">Switch to graph view</string>
 </resources>

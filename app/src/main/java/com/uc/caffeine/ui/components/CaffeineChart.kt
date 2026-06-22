@@ -31,6 +31,8 @@ import com.uc.caffeine.util.ChartMarkerEntry
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.automirrored.rounded.ArrowForward
+import androidx.compose.material.icons.rounded.KeyboardArrowDown
+import androidx.compose.material.icons.rounded.KeyboardArrowUp
 import androidx.compose.ui.platform.LocalFontFamilyResolver
 import com.uc.caffeine.data.AppDateFormat
 import com.uc.caffeine.ui.theme.MontserratFamily
@@ -45,6 +47,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.width
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.Icon
 import androidx.compose.runtime.Composable
@@ -188,6 +191,19 @@ internal fun caffeineToAxisSpace(value: Double, logScale: Boolean, floorMg: Doub
 internal fun axisSpaceToCaffeine(axisValue: Double, logScale: Boolean, floorMg: Double = 1.0): Double =
     if (logScale) floorMg * (10.0).pow(axisValue) else axisValue
 
+// "Nice" Y-axis caps the zoom controls step through; 0 (auto) sits above the top.
+internal val YAxisMaxLadderMg = listOf(50, 100, 150, 200, 300, 400, 500, 750, 1000, 1500, 2000)
+
+/** The next manual Y-axis cap (mg) when stepping the chart zoom; 0 means auto. */
+internal fun nextYAxisMaxMg(currentMg: Int, autoMaxMg: Int, zoomIn: Boolean): Int {
+    return if (zoomIn) {
+        val reference = if (currentMg > 0) currentMg else autoMaxMg
+        YAxisMaxLadderMg.lastOrNull { it < reference } ?: YAxisMaxLadderMg.first()
+    } else {
+        if (currentMg <= 0) 0 else YAxisMaxLadderMg.firstOrNull { it > currentMg } ?: 0
+    }
+}
+
 private fun CartesianDrawingContext.xToCanvas(xValue: Double): Float {
     val fullRangeStart = ranges.minX - layerDimensions.startPadding / layerDimensions.xSpacing * ranges.xStep
     val offsetPx = ((xValue - fullRangeStart) / ranges.xStep).toFloat() * layerDimensions.xSpacing
@@ -206,6 +222,8 @@ fun CaffeineChart(
     modifier: Modifier = Modifier,
     onEntryClick: ((entryId: Int) -> Unit)? = null,
     onHeadacheClick: ((headacheId: Int) -> Unit)? = null,
+    chartYAxisMaxMg: Int = 0,
+    onSetYAxisMax: ((mg: Int) -> Unit)? = null,
 ) {
     val colorScheme = MaterialTheme.colorScheme
     val displaySeries = remember(chartData, liveNowMillis) {
@@ -227,12 +245,17 @@ fun CaffeineChart(
             .coerceAtLeast(1.0)
     }
 
-    val yAxisStep = remember(maxCaffeine) {
-        maxOf(100.0, kotlin.math.ceil(maxCaffeine / 3.0 / 100.0) * 100.0)
+    // Data-driven ("auto") max, used when no manual cap is set and to seed the
+    // first manual zoom step.
+    val autoYAxisMax = remember(maxCaffeine) {
+        maxOf(100.0, kotlin.math.ceil(maxCaffeine / 3.0 / 100.0) * 100.0) * 4.0
     }
 
-    val yAxisMax = remember(yAxisStep) {
-        yAxisStep * 4.0
+    val yAxisMax = remember(autoYAxisMax, chartYAxisMaxMg) {
+        if (chartYAxisMaxMg > 0) chartYAxisMaxMg.toDouble() else autoYAxisMax
+    }
+    val yAxisStep = remember(yAxisMax) {
+        yAxisMax / (VERTICAL_AXIS_LABEL_COUNT - 1)
     }
 
     // The axis is plotted in "axis space" (identity for linear, floor-relative
@@ -629,6 +652,17 @@ fun CaffeineChart(
                 .padding(horizontal = 12.dp, vertical = 10.dp),
         )
 
+        if (onSetYAxisMax != null) {
+            YAxisZoomControl(
+                currentMaxMg = chartYAxisMaxMg,
+                onZoomIn = { onSetYAxisMax(nextYAxisMaxMg(chartYAxisMaxMg, autoYAxisMax.roundToInt(), zoomIn = true)) },
+                onZoomOut = { onSetYAxisMax(nextYAxisMaxMg(chartYAxisMaxMg, autoYAxisMax.roundToInt(), zoomIn = false)) },
+                modifier = Modifier
+                    .align(Alignment.TopStart)
+                    .padding(horizontal = 8.dp, vertical = 8.dp),
+            )
+        }
+
         AnimatedVisibility(
             visible = showLeftReturnButton,
             enter = fadeIn(animationSpec = tween(durationMillis = 180)),
@@ -719,6 +753,51 @@ fun CaffeineChart(
                         )
                     }
                 }
+            }
+        }
+    }
+}
+
+@Composable
+private fun YAxisZoomControl(
+    currentMaxMg: Int,
+    onZoomIn: () -> Unit,
+    onZoomOut: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val haptics = rememberAppHaptics()
+    Surface(
+        modifier = modifier,
+        shape = RoundedCornerShape(50),
+        color = MaterialTheme.colorScheme.surfaceContainerHighest.copy(alpha = 0.85f),
+        contentColor = MaterialTheme.colorScheme.onSurfaceVariant,
+    ) {
+        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+            IconButton(
+                onClick = { haptics.toggle(); onZoomOut() },
+                modifier = Modifier.size(28.dp),
+            ) {
+                Icon(
+                    imageVector = Icons.Rounded.KeyboardArrowUp,
+                    contentDescription = stringResource(R.string.chart_y_axis_raise_cd),
+                    modifier = Modifier.size(18.dp),
+                )
+            }
+            Text(
+                text = if (currentMaxMg > 0) "$currentMaxMg" else stringResource(R.string.chart_y_axis_auto),
+                style = MaterialTheme.typography.labelSmall,
+                maxLines = 1,
+                softWrap = false,
+            )
+            IconButton(
+                onClick = { haptics.toggle(); onZoomIn() },
+                modifier = Modifier.size(28.dp),
+            ) {
+                Icon(
+                    imageVector = Icons.Rounded.KeyboardArrowDown,
+                    contentDescription = stringResource(R.string.chart_y_axis_lower_cd),
+                    modifier = Modifier.size(18.dp),
+                )
             }
         }
     }

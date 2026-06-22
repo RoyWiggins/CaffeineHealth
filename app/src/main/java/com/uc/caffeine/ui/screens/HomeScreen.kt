@@ -305,6 +305,8 @@ fun HomeScreen(
                                         selectedHeadache = item
                                     }
                                 },
+                                chartYAxisMaxMg = userSettings.chartYAxisMaxMg,
+                                onSetYAxisMax = viewModel::updateChartYAxisMax,
                             )
                             HomeViewMode.CIRCULAR -> CaffeineRadialView(
                                 data = radialData,

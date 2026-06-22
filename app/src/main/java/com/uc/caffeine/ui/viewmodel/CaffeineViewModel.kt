@@ -938,6 +938,12 @@ class CaffeineViewModel(application: Application) : AndroidViewModel(application
         }
     }
 
+    fun updateChartYAxisMax(mg: Int) {
+        viewModelScope.launch {
+            settingsRepo.updateChartYAxisMax(mg)
+        }
+    }
+
     fun updateUse24HourClock(enabled: Boolean) {
         viewModelScope.launch {
             settingsRepo.updateUse24HourClock(enabled)

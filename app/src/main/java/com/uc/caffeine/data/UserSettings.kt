@@ -202,6 +202,12 @@ data class UserSettings(
      * seeing low residual caffeine levels that a linear scale flattens to zero.
      */
     val chartLogScale: Boolean = false,
+
+    /**
+     * Manual maximum for the Home chart's Y axis, in mg. 0 = auto (scale to the
+     * data). A fixed cap is handy for monitoring a taper at a steady zoom.
+     */
+    val chartYAxisMaxMg: Int = 0,
     val weeklySleepRotaEnabled: Boolean = false,
     val weeklySleepRota: Map<DayOfWeek, LocalTime> = emptyMap(),
 ) {
