@@ -205,6 +205,24 @@ internal fun nextYAxisMaxMg(currentMg: Int, autoMaxMg: Int, zoomIn: Boolean): In
     }
 }
 
+/** A "nice" round gridline step (1/1.5/2/2.5/3/5/10 × 10ⁿ) giving ~5 intervals up to [maxMg]. */
+internal fun niceAxisStepMg(maxMg: Double, targetTicks: Int = 5): Double {
+    if (maxMg <= 0.0) return 1.0
+    val rough = maxMg / targetTicks
+    val magnitude = 10.0.pow(kotlin.math.floor(log10(rough)))
+    val normalized = rough / magnitude
+    val nice = when {
+        normalized <= 1.0 -> 1.0
+        normalized <= 1.5 -> 1.5
+        normalized <= 2.0 -> 2.0
+        normalized <= 2.5 -> 2.5
+        normalized <= 3.0 -> 3.0
+        normalized <= 5.0 -> 5.0
+        else -> 10.0
+    }
+    return nice * magnitude
+}
+
 private fun CartesianDrawingContext.xToCanvas(xValue: Double): Float {
     val fullRangeStart = ranges.minX - layerDimensions.startPadding / layerDimensions.xSpacing * ranges.xStep
     val offsetPx = ((xValue - fullRangeStart) / ranges.xStep).toFloat() * layerDimensions.xSpacing
@@ -255,9 +273,6 @@ fun CaffeineChart(
     val yAxisMax = remember(autoYAxisMax, chartYAxisMaxMg) {
         if (chartYAxisMaxMg > 0) chartYAxisMaxMg.toDouble() else autoYAxisMax
     }
-    val yAxisStep = remember(yAxisMax) {
-        yAxisMax / (VERTICAL_AXIS_LABEL_COUNT - 1)
-    }
 
     // The axis is plotted in "axis space" (identity for linear, floor-relative
     // log10 for log). All Y positions — the line series, range, ticks, threshold
@@ -265,8 +280,9 @@ fun CaffeineChart(
     val axisMaxY = remember(yAxisMax, logScale, logFloor) {
         if (logScale) caffeineToAxisSpace(yAxisMax, true, logFloor) else yAxisMax
     }
-    val axisStepY = remember(axisMaxY, yAxisStep, logScale) {
-        if (logScale) axisMaxY / (VERTICAL_AXIS_LABEL_COUNT - 1) else yAxisStep
+    // Linear: nice round gridline step. Log: even split of the log range.
+    val axisStepY = remember(axisMaxY, yAxisMax, logScale) {
+        if (logScale) axisMaxY / (VERTICAL_AXIS_LABEL_COUNT - 1) else niceAxisStepMg(yAxisMax)
     }
 
     val dataMinX = remember(displaySeries.xValues) {
@@ -303,7 +319,9 @@ fun CaffeineChart(
         else displaySeries.yValues
     }
     var isModelReady by remember { mutableStateOf(false) }
-    LaunchedEffect(displaySeries.xValues, seriesYValues) {
+    // axisMaxY is a key so changing the Y-axis cap re-pushes the model, which makes
+    // Vico recompute the line's vertical range against the new fixed maximum.
+    LaunchedEffect(displaySeries.xValues, seriesYValues, axisMaxY) {
         if (displaySeries.xValues.isNotEmpty()) {
             modelProducer.runTransaction {
                 lineSeries {
