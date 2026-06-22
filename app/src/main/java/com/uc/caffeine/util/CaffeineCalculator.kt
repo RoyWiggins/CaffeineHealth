@@ -47,7 +47,10 @@ object CaffeineCalculator {
         currentTimeMillis: Long = System.currentTimeMillis(),
         halfLifeMinutes: Int = 300,
     ): Double {
-        if (currentTimeMillis < entry.startedAtMillis) return 0.0
+        // effectiveStartMillis shifts the whole absorption window forward for
+        // delayed-release entries (e.g. timed-release caffeine pills).
+        val effectiveStart = entry.effectiveStartMillis
+        if (currentTimeMillis < effectiveStart) return 0.0
 
         val doseCount = entry.normalizedDurationMinutes
         val doseMg = entry.caffeineMg.toDouble() / doseCount.toDouble()
@@ -55,7 +58,7 @@ object CaffeineCalculator {
         return (0 until doseCount).sumOf { minuteIndex ->
             calculateDecayedAmount(
                 caffeineMg = doseMg,
-                consumedAtMillis = entry.startedAtMillis + (minuteIndex * MINUTE_MILLIS),
+                consumedAtMillis = effectiveStart + (minuteIndex * MINUTE_MILLIS),
                 currentTimeMillis = currentTimeMillis,
                 absorptionMinutes = entry.absorptionRate,
                 halfLifeMinutes = halfLifeMinutes,
@@ -155,11 +158,11 @@ object CaffeineCalculator {
             MIN_PEAK_SEARCH_PADDING_MINUTES,
             entry.absorptionRate.toLong() * PEAK_SEARCH_PADDING_MULTIPLIER,
         )
-        val searchEndTime = entry.finishedAtMillis + (searchPaddingMinutes * MINUTE_MILLIS)
+        val searchEndTime = entry.effectiveFinishMillis + (searchPaddingMinutes * MINUTE_MILLIS)
 
-        var bestTime = entry.startedAtMillis
+        var bestTime = entry.effectiveStartMillis
         var bestLevel = Double.NEGATIVE_INFINITY
-        var probeTime = entry.startedAtMillis
+        var probeTime = entry.effectiveStartMillis
         while (probeTime <= searchEndTime) {
             val level = calculateEntryContribution(
                 entry = entry,

@@ -26,20 +26,26 @@ import com.uc.caffeine.ui.onboarding.SmokingHabit
 import com.uc.caffeine.ui.onboarding.WeightUnit
 import com.uc.caffeine.R
 import com.uc.caffeine.data.model.ConsumptionEntry
-import com.uc.caffeine.data.model.DEFAULT_CONSUMPTION_DURATION_MINUTES
+import com.uc.caffeine.data.model.defaultConsumptionDurationMinutes
 import com.uc.caffeine.data.model.DrinkPreset
 import com.uc.caffeine.data.model.DrinkUnit
+import com.uc.caffeine.data.model.HeadacheEntry
 import com.uc.caffeine.data.model.RecentDrink
 import com.uc.caffeine.util.CaffeineCalculator
 import com.uc.caffeine.util.AnalyticsRange
 import com.uc.caffeine.util.AnalyticsUiState
 import com.uc.caffeine.util.calculateNextBedtimeMillis
+import com.uc.caffeine.util.calculateNextWakeTimeMillis
 import com.uc.caffeine.util.calculateServingTotalCaffeine
 import com.uc.caffeine.util.buildAnalyticsUiState
 import com.uc.caffeine.util.CategoryUtils
 import com.uc.caffeine.util.ChartData
 import com.uc.caffeine.util.ChartDataGenerator
 import com.uc.caffeine.util.ConsumptionContributionDetail
+import com.uc.caffeine.util.HomeTimelineItem
+import com.uc.caffeine.util.RadialCaffeineData
+import com.uc.caffeine.util.buildHomeTimeline
+import com.uc.caffeine.util.buildRadialCaffeineData
 import com.uc.caffeine.util.groupConsumptionEntriesByLocalDate
 import com.uc.caffeine.util.nextStartOfDayMillis
 import com.uc.caffeine.util.resolvedZoneId
@@ -84,10 +90,11 @@ class CaffeineViewModel(application: Application) : AndroidViewModel(application
     private val presetDao = db.drinkPresetDao()
     private val unitDao   = db.drinkUnitDao()
     private val logDao    = db.consumptionLogDao()
+    private val headacheDao = db.headacheLogDao()
     private val settingsRepo = SettingsRepository(application)
     val healthConnectManager = HealthConnectManager(application)
 
-    private val backupManager = com.uc.caffeine.data.BackupManager(logDao, presetDao, unitDao, settingsRepo)
+    private val backupManager = com.uc.caffeine.data.BackupManager(logDao, presetDao, unitDao, headacheDao, settingsRepo)
 
     private val _myDataState = MutableStateFlow<MyDataUiState>(MyDataUiState.Idle)
     val myDataState: StateFlow<MyDataUiState> = _myDataState.asStateFlow()
@@ -164,6 +171,7 @@ class CaffeineViewModel(application: Application) : AndroidViewModel(application
 
     private val allDrinkPresets = presetDao.getAllPresets()
     private val allConsumptionEntries = logDao.getAllEntries()
+    private val allHeadaches = headacheDao.getAll()
 
     val isDrinkCatalogLoading: StateFlow<Boolean> = allDrinkPresets
         .map { false }
@@ -234,14 +242,34 @@ class CaffeineViewModel(application: Application) : AndroidViewModel(application
         initialValue = emptyList()
     )
 
-    // The 2 most recently logged serving combos — used by quick add on AddScreen.
-    val recentDrinks: StateFlow<List<RecentDrink>> = logDao
-        .getRecentlyUsedDrinks()
+    // Favorite drinks — pinned above recent servings on the Add screen.
+    val favoriteDrinks: StateFlow<List<DrinkPreset>> = allDrinkPresets
+        .map { presets -> presets.filter(DrinkPreset::isFavorite) }
         .stateIn(
             scope = viewModelScope,
             started = SharingStarted.WhileSubscribed(5_000),
             initialValue = emptyList()
         )
+
+    // The 2 most recently logged serving combos — used by quick add on AddScreen.
+    // Favorited drinks are excluded here since they already appear in the favorites row.
+    val recentDrinks: StateFlow<List<RecentDrink>> = combine(
+        logDao.getRecentlyUsedDrinks(),
+        favoriteDrinks,
+    ) { recents, favorites ->
+        val favoriteItemIds = favorites.map(DrinkPreset::itemId).filter { it.isNotBlank() }.toSet()
+        recents.filterNot { it.presetItemId.isNotBlank() && it.presetItemId in favoriteItemIds }
+    }.stateIn(
+        scope = viewModelScope,
+        started = SharingStarted.WhileSubscribed(5_000),
+        initialValue = emptyList()
+    )
+
+    fun setFavorite(presetId: Int, isFavorite: Boolean) {
+        viewModelScope.launch {
+            presetDao.setFavorite(presetId, isFavorite)
+        }
+    }
 
     // Grouped drink catalog by category — used by the Add screen for categorized display
     val groupedDrinkPresets: StateFlow<Map<String, List<DrinkPreset>>> =
@@ -339,6 +367,31 @@ class CaffeineViewModel(application: Application) : AndroidViewModel(application
         initialValue = Pair(0.0, System.currentTimeMillis())
     )
 
+    /**
+     * Predicts caffeine level at the user's designated wake-up time, for the morning
+     * withdrawal warning.
+     * Returns: Pair<caffeineLevelAtWake, wakeTimeMillis>
+     */
+    val caffeineAtWakeTime: StateFlow<Pair<Double, Long>> = combine(
+        allConsumptionEntries,
+        userSettings,
+        chartTickerFlow
+    ) { allEntries, settings, _ ->
+        val now = System.currentTimeMillis()
+        val wakeTime = calculateNextWakeTimeMillis(now, settings)
+        val caffeineLevel = CaffeineCalculator.calculateCurrentLevel(
+            entries = allEntries,
+            currentTimeMillis = wakeTime,
+            halfLifeMinutes = settings.effectiveHalfLifeMinutes
+        )
+        Pair(caffeineLevel, wakeTime)
+    }.flowOn(Dispatchers.Default)
+    .stateIn(
+        scope = viewModelScope,
+        started = SharingStarted.Eagerly,
+        initialValue = Pair(0.0, System.currentTimeMillis())
+    )
+
     // Time until peak absorption - shows when caffeine is still being absorbed
     val timeUntilPeak: StateFlow<Long?> = combine(
         allConsumptionEntries,
@@ -387,16 +440,52 @@ class CaffeineViewModel(application: Application) : AndroidViewModel(application
         initialValue = CaffeineTrend.STEADY,
     )
 
+    // Not-yet-taken doses near their scheduled time — drives the Home dose banner.
+    // A broad window here (the UI narrows to [-10 min, +2 h]); refreshed each minute.
+    val nearTermDoses: StateFlow<List<ConsumptionEntry>> = combine(
+        allConsumptionEntries,
+        chartTickerFlow,
+    ) { entries, now ->
+        val from = now - 60 * 60_000L
+        val to = now + 3 * 60 * 60_000L
+        entries.asSequence()
+            .filter { !it.taken && it.startedAtMillis in from..to }
+            .sortedBy { it.startedAtMillis }
+            .toList()
+    }.stateIn(
+        scope = viewModelScope,
+        started = SharingStarted.WhileSubscribed(5_000),
+        initialValue = emptyList()
+    )
+
+    // Merged drink + headache timeline for the Home screen, grouped by day.
+    // Each headache carries the caffeine level inferred at the time it occurred.
+    val homeTimeline: StateFlow<Map<LocalDate, List<HomeTimelineItem>>> = combine(
+        allConsumptionEntries,
+        allHeadaches,
+        userSettings,
+    ) { entries, headaches, settings ->
+        buildHomeTimeline(entries, headaches, settings)
+    }
+        .flowOn(Dispatchers.Default)
+        .stateIn(
+            scope = viewModelScope,
+            started = SharingStarted.WhileSubscribed(5_000),
+            initialValue = emptyMap()
+        )
+
     // Reactive all-history caffeine curve data for charting
     val chartData: StateFlow<ChartData> = combine(
         allConsumptionEntries,
         chartTickerFlow,
-        userSettings
-    ) { entries, currentTime, settings ->
+        userSettings,
+        allHeadaches,
+    ) { entries, currentTime, settings, headaches ->
         ChartDataGenerator.generateChartData(
             entries = entries,
             settings = settings,
-            currentTime = currentTime
+            currentTime = currentTime,
+            headaches = headaches,
         )
     }.flowOn(Dispatchers.Default)
     .stateIn(
@@ -409,6 +498,25 @@ class CaffeineViewModel(application: Application) : AndroidViewModel(application
         )
     )
 
+    // Last-7-days radial view data. Only computed while the circular view is the
+    // active Home view mode, to avoid the per-sample cost in graph mode.
+    val radialCaffeineData: StateFlow<RadialCaffeineData> = combine(
+        allConsumptionEntries,
+        chartTickerFlow,
+        userSettings,
+    ) { entries, currentTime, settings ->
+        if (settings.homeViewMode != com.uc.caffeine.data.HomeViewMode.CIRCULAR) {
+            RadialCaffeineData.EMPTY
+        } else {
+            buildRadialCaffeineData(entries = entries, settings = settings, nowMillis = currentTime)
+        }
+    }.flowOn(Dispatchers.Default)
+        .stateIn(
+            scope = viewModelScope,
+            started = SharingStarted.WhileSubscribed(5_000),
+            initialValue = RadialCaffeineData.EMPTY,
+        )
+
     val analyticsUiState: StateFlow<AnalyticsUiState> = combine(
         allConsumptionEntries,
         drinkPresets,
@@ -417,6 +525,7 @@ class CaffeineViewModel(application: Application) : AndroidViewModel(application
         chartTickerFlow,
         _customRangeStart,
         _customRangeEnd,
+        allHeadaches,
     ) { values ->
         @Suppress("UNCHECKED_CAST")
         buildAnalyticsUiState(
@@ -427,6 +536,7 @@ class CaffeineViewModel(application: Application) : AndroidViewModel(application
             nowMillis = values[4] as Long,
             customStartDate = values[5] as? java.time.LocalDate,
             customEndDate = values[6] as? java.time.LocalDate,
+            headaches = values[7] as List<HeadacheEntry>,
         )
     }.flowOn(Dispatchers.Default)
         .stateIn(
@@ -487,7 +597,7 @@ class CaffeineViewModel(application: Application) : AndroidViewModel(application
                 quantity = 1,
                 unit = defaultUnit,
                 startedAtMillis = System.currentTimeMillis(),
-                durationMinutes = DEFAULT_CONSUMPTION_DURATION_MINUTES,
+                durationMinutes = defaultConsumptionDurationMinutes(preset.category),
             )
             val newId = logDao.logDrink(entry)
             triggerWidgetRefresh()
@@ -516,6 +626,9 @@ class CaffeineViewModel(application: Application) : AndroidViewModel(application
             )
             val newId = logDao.logDrink(entry)
             triggerWidgetRefresh()
+            com.uc.caffeine.util.notifications.NotificationScheduler.scheduleOrCancelDrinkReminder(
+                getApplication(), newId.toInt(), preset.name, quantity, startedAtMillis,
+            )
             addScreenEventsChannel.send(AddScreenUiEvent.DrinkLogged(preset.name))
             val settings = userSettings.value
             if (settings.healthConnectEnabled) {
@@ -538,6 +651,7 @@ class CaffeineViewModel(application: Application) : AndroidViewModel(application
                 unitCaffeineMg = recent.unitCaffeineMg,
                 imageName  = recent.imageName,
                 absorptionRate = recent.absorptionRate,
+                delayMinutes = recent.delayMinutes,
                 startedAtMillis = System.currentTimeMillis(),
                 durationMinutes = recent.durationMinutes,
             )
@@ -565,6 +679,7 @@ class CaffeineViewModel(application: Application) : AndroidViewModel(application
 
     fun updateLoggedEntry(
         entry: ConsumptionEntry,
+        newPreset: DrinkPreset?,
         quantity: Int,
         unit: DrinkUnit,
         startedAtMillis: Long,
@@ -573,31 +688,38 @@ class CaffeineViewModel(application: Application) : AndroidViewModel(application
         viewModelScope.launch {
             val newCaffeineMg = calculateServingTotalCaffeine(quantity, unit.caffeineMg)
             val coercedDuration = durationMinutes.coerceAtLeast(1)
-            logDao.updateEntryById(
-                entryId = entry.id,
+            // Re-derive taken from the (possibly moved) time: future = scheduled.
+            val taken = startedAtMillis <= System.currentTimeMillis()
+            // newPreset != null when the drink *type* was changed during editing —
+            // carry its identity (name, emoji, image, absorption, delay) onto the row.
+            val updated = entry.copy(
+                drinkName = newPreset?.name ?: entry.drinkName,
+                emoji = newPreset?.emoji ?: entry.emoji,
+                imageName = newPreset?.imageName ?: entry.imageName,
+                presetItemId = newPreset?.itemId ?: entry.presetItemId,
+                absorptionRate = newPreset?.absorptionRate ?: entry.absorptionRate,
+                delayMinutes = newPreset?.delayMinutes ?: entry.delayMinutes,
                 caffeineMg = newCaffeineMg,
                 quantity = quantity,
                 unitKey = unit.unitKey,
                 unitCaffeineMg = unit.caffeineMg,
                 startedAtMillis = startedAtMillis,
                 durationMinutes = coercedDuration,
+                taken = taken,
             )
+            logDao.updateEntry(updated)
             triggerWidgetRefresh()
+            // Moving the entry re-arms (or clears) its "time to take it" reminder.
+            com.uc.caffeine.util.notifications.NotificationScheduler.scheduleOrCancelDrinkReminder(
+                getApplication(), updated.id, updated.drinkName, quantity, startedAtMillis,
+            )
             homeScreenEventsChannel.send(
-                HomeScreenUiEvent.LogActionCompleted("Updated ${entry.drinkName}")
+                HomeScreenUiEvent.LogActionCompleted("Updated ${updated.drinkName}")
             )
             val settings = userSettings.value
             if (settings.healthConnectEnabled) {
-                val updatedEntry = entry.copy(
-                    caffeineMg = newCaffeineMg,
-                    quantity = quantity,
-                    unitKey = unit.unitKey,
-                    unitCaffeineMg = unit.caffeineMg,
-                    startedAtMillis = startedAtMillis,
-                    durationMinutes = coercedDuration,
-                )
                 val zoneId = java.time.ZoneId.of(settings.timeZoneId)
-                runCatching { healthConnectManager.writeEntry(updatedEntry, zoneId) }
+                runCatching { healthConnectManager.writeEntry(updated, zoneId) }
             }
         }
     }
@@ -608,6 +730,7 @@ class CaffeineViewModel(application: Application) : AndroidViewModel(application
                 id = 0,
                 startedAtMillis = System.currentTimeMillis(),
                 healthConnectRecordId = null,
+                taken = true,
             )
             val newId = logDao.logDrink(duplicate)
             triggerWidgetRefresh()
@@ -628,10 +751,28 @@ class CaffeineViewModel(application: Application) : AndroidViewModel(application
         }
     }
 
+    fun markEntryTaken(entry: ConsumptionEntry) {
+        viewModelScope.launch {
+            logDao.markTaken(entry.id)
+            com.uc.caffeine.util.notifications.NotificationScheduler.cancelDrinkReminder(
+                getApplication(), entry.id,
+            )
+            triggerWidgetRefresh()
+            homeScreenEventsChannel.send(
+                HomeScreenUiEvent.LogActionCompleted(
+                    getApplication<Application>().getString(R.string.entry_marked_taken, entry.drinkName)
+                )
+            )
+        }
+    }
+
     fun deleteLoggedEntry(entry: ConsumptionEntry) {
         viewModelScope.launch {
             logDao.deleteEntryById(entry.id)
             triggerWidgetRefresh()
+            com.uc.caffeine.util.notifications.NotificationScheduler.cancelDrinkReminder(
+                getApplication(), entry.id,
+            )
             homeScreenEventsChannel.send(
                 HomeScreenUiEvent.LogActionCompleted("Deleted ${entry.drinkName}")
             )
@@ -639,6 +780,34 @@ class CaffeineViewModel(application: Application) : AndroidViewModel(application
             if (settings.healthConnectEnabled) {
                 runCatching { healthConnectManager.deleteEntry(entry) }
             }
+        }
+    }
+
+    fun reportHeadache(startedAtMillis: Long, severity: Int, note: String) {
+        viewModelScope.launch {
+            headacheDao.insert(
+                HeadacheEntry(
+                    startedAtMillis = startedAtMillis,
+                    severity = severity,
+                    note = note.trim(),
+                )
+            )
+            homeScreenEventsChannel.send(
+                HomeScreenUiEvent.LogActionCompleted(
+                    getApplication<Application>().getString(R.string.headache_logged_toast)
+                )
+            )
+        }
+    }
+
+    fun deleteHeadache(entry: HeadacheEntry) {
+        viewModelScope.launch {
+            headacheDao.deleteById(entry.id)
+            homeScreenEventsChannel.send(
+                HomeScreenUiEvent.LogActionCompleted(
+                    getApplication<Application>().getString(R.string.headache_deleted_toast)
+                )
+            )
         }
     }
 
@@ -652,6 +821,14 @@ class CaffeineViewModel(application: Application) : AndroidViewModel(application
             val todayEntriesToDelete = logDao.getTodayEntriesOnce(startOfDay)
             logDao.clearToday(startOfDay)
             triggerWidgetRefresh()
+            val now = System.currentTimeMillis()
+            todayEntriesToDelete
+                .filter { it.startedAtMillis > now }
+                .forEach {
+                    com.uc.caffeine.util.notifications.NotificationScheduler.cancelDrinkReminder(
+                        getApplication(), it.id,
+                    )
+                }
             if (settings.healthConnectEnabled) {
                 runCatching { healthConnectManager.deleteEntries(todayEntriesToDelete) }
             }
@@ -713,6 +890,24 @@ class CaffeineViewModel(application: Application) : AndroidViewModel(application
         }
     }
 
+    fun updateWithdrawalThresholdEnabled(enabled: Boolean) {
+        viewModelScope.launch {
+            settingsRepo.updateWithdrawalThresholdEnabled(enabled)
+        }
+    }
+
+    fun updateWithdrawalThreshold(milligrams: Int) {
+        viewModelScope.launch {
+            settingsRepo.updateWithdrawalThreshold(milligrams)
+        }
+    }
+
+    fun updateWakeTime(hour: Int, minute: Int) {
+        viewModelScope.launch {
+            settingsRepo.updateWakeTime(hour, minute)
+        }
+    }
+
     fun updateThemeMode(themeMode: ThemeMode) {
         viewModelScope.launch {
             settingsRepo.updateThemeMode(themeMode)
@@ -734,6 +929,18 @@ class CaffeineViewModel(application: Application) : AndroidViewModel(application
     fun updateColorPalette(palette: com.uc.caffeine.data.AppColorPalette) {
         viewModelScope.launch {
             settingsRepo.updateColorPalette(palette)
+        }
+    }
+
+    fun updateChartLogScale(enabled: Boolean) {
+        viewModelScope.launch {
+            settingsRepo.updateChartLogScale(enabled)
+        }
+    }
+
+    fun updateChartYAxisMax(mg: Int) {
+        viewModelScope.launch {
+            settingsRepo.updateChartYAxisMax(mg)
         }
     }
 
@@ -1049,6 +1256,7 @@ class CaffeineViewModel(application: Application) : AndroidViewModel(application
         category: String,
         unitKey: String,
         caffeineMg: Double,
+        delayMinutes: Int = 0,
     ) {
         viewModelScope.launch {
             val preset = DrinkPreset(
@@ -1059,6 +1267,7 @@ class CaffeineViewModel(application: Application) : AndroidViewModel(application
                 category = category,
                 defaultUnit = unitKey,
                 defaultCaffeineMg = caffeineMg.toInt(),
+                delayMinutes = delayMinutes.coerceAtLeast(0),
                 isCustom = true,
                 relevance = 10000,
             )
@@ -1084,6 +1293,7 @@ class CaffeineViewModel(application: Application) : AndroidViewModel(application
         category: String,
         unitKey: String,
         caffeineMg: Double,
+        delayMinutes: Int = 0,
     ) {
         viewModelScope.launch {
             val updated = preset.copy(
@@ -1093,6 +1303,7 @@ class CaffeineViewModel(application: Application) : AndroidViewModel(application
                 category = category,
                 defaultUnit = unitKey,
                 defaultCaffeineMg = caffeineMg.toInt(),
+                delayMinutes = delayMinutes.coerceAtLeast(0),
             )
             presetDao.update(updated)
             unitDao.deleteUnitsForDrink(preset.id)
@@ -1127,8 +1338,11 @@ class CaffeineViewModel(application: Application) : AndroidViewModel(application
             unitCaffeineMg = unit.caffeineMg,
             imageName = preset.imageName,
             absorptionRate = preset.absorptionRate,
+            delayMinutes = preset.delayMinutes,
             startedAtMillis = startedAtMillis,
             durationMinutes = durationMinutes.coerceAtLeast(1),
+            // Future-dated entries are scheduled, not yet taken.
+            taken = startedAtMillis <= System.currentTimeMillis(),
         )
     }
 

@@ -3,9 +3,11 @@ package com.uc.caffeine.data
 import com.uc.caffeine.data.dao.ConsumptionLogDao
 import com.uc.caffeine.data.dao.DrinkPresetDao
 import com.uc.caffeine.data.dao.DrinkUnitDao
+import com.uc.caffeine.data.dao.HeadacheLogDao
 import com.uc.caffeine.data.model.ConsumptionEntry
 import com.uc.caffeine.data.model.DrinkPreset
 import com.uc.caffeine.data.model.DrinkUnit
+import com.uc.caffeine.data.model.HeadacheEntry
 import org.json.JSONArray
 import org.json.JSONObject
 import java.time.DayOfWeek
@@ -18,6 +20,7 @@ class BackupManager(
     private val logDao: ConsumptionLogDao,
     private val presetDao: DrinkPresetDao,
     private val unitDao: DrinkUnitDao,
+    private val headacheDao: HeadacheLogDao,
     private val settingsRepo: SettingsRepository,
 ) {
     suspend fun createBackup(settings: UserSettings): String {
@@ -40,11 +43,23 @@ class BackupManager(
                 put("unitCaffeineMg", entry.unitCaffeineMg)
                 put("imageName", entry.imageName)
                 put("absorptionRate", entry.absorptionRate)
+                put("delayMinutes", entry.delayMinutes)
                 put("startedAtMillis", entry.startedAtMillis)
                 put("durationMinutes", entry.durationMinutes)
+                put("taken", entry.taken)
             })
         }
         root.put("consumptionLog", logArray)
+
+        val headacheArray = JSONArray()
+        for (headache in headacheDao.getAllOnce()) {
+            headacheArray.put(JSONObject().apply {
+                put("startedAtMillis", headache.startedAtMillis)
+                put("severity", headache.severity)
+                put("note", headache.note)
+            })
+        }
+        root.put("headacheLog", headacheArray)
 
         val settingsObj = JSONObject().apply {
             put("halfLifeMinutes", settings.halfLifeMinutes)
@@ -52,7 +67,13 @@ class BackupManager(
             put("absorptionRateMinutes", settings.absorptionRateMinutes)
             put("sleepTimeHour", settings.sleepTimeHour)
             put("sleepTimeMinute", settings.sleepTimeMinute)
+            put("withdrawalThresholdEnabled", settings.withdrawalThresholdEnabled)
+            put("withdrawalThresholdMg", settings.withdrawalThresholdMg)
+            put("wakeTimeHour", settings.wakeTimeHour)
+            put("wakeTimeMinute", settings.wakeTimeMinute)
             put("themeMode", settings.themeMode.name)
+            put("chartLogScale", settings.chartLogScale)
+            put("chartYAxisMaxMg", settings.chartYAxisMaxMg)
             put("useDynamicColor", settings.useDynamicColor)
             put("use24HourClock", settings.use24HourClock)
             put("dateFormat", settings.dateFormat.name)
@@ -91,6 +112,7 @@ class BackupManager(
                 put("imageName", preset.imageName)
                 put("emoji", preset.emoji)
                 put("absorptionRate", preset.absorptionRate)
+                put("delayMinutes", preset.delayMinutes)
                 put("relevance", preset.relevance)
                 put("defaultUnit", preset.defaultUnit)
                 put("defaultCaffeineMg", preset.defaultCaffeineMg)
@@ -110,6 +132,8 @@ class BackupManager(
         }
         root.put("customDrinks", customArray)
 
+        root.put("favoriteItemIds", JSONArray(presetDao.getFavoriteItemIds()))
+
         return root.toString(2)
     }
 
@@ -121,6 +145,8 @@ class BackupManager(
         if (mode == ImportMode.REPLACE) {
             logDao.deleteAll()
             presetDao.deleteCustomPresets()
+            headacheDao.deleteAll()
+            presetDao.clearAllFavorites()
         }
 
         val existingKeys = if (mode == ImportMode.MERGE) {
@@ -143,8 +169,28 @@ class BackupManager(
                     unitCaffeineMg = obj.optDouble("unitCaffeineMg", 0.0),
                     imageName = obj.optString("imageName", ""),
                     absorptionRate = obj.optInt("absorptionRate", 45),
+                    delayMinutes = obj.optInt("delayMinutes", 0),
                     startedAtMillis = obj.getLong("startedAtMillis"),
                     durationMinutes = obj.optInt("durationMinutes", 10),
+                    taken = obj.optBoolean("taken", true),
+                )
+            )
+        }
+
+        val existingHeadacheKeys = if (mode == ImportMode.MERGE) {
+            headacheDao.getAllOnce().map { it.startedAtMillis }.toSet()
+        } else emptySet()
+
+        val headacheArray = root.optJSONArray("headacheLog") ?: JSONArray()
+        for (i in 0 until headacheArray.length()) {
+            val obj = headacheArray.getJSONObject(i)
+            val startedAtMillis = obj.getLong("startedAtMillis")
+            if (startedAtMillis in existingHeadacheKeys) continue
+            headacheDao.insert(
+                HeadacheEntry(
+                    startedAtMillis = startedAtMillis,
+                    severity = obj.optInt("severity", 2),
+                    note = obj.optString("note", ""),
                 )
             )
         }
@@ -170,7 +216,13 @@ class BackupManager(
                 absorptionRateMinutes = settingsObj.optInt("absorptionRateMinutes", 45),
                 sleepTimeHour = settingsObj.optInt("sleepTimeHour", 23),
                 sleepTimeMinute = settingsObj.optInt("sleepTimeMinute", 0),
+                withdrawalThresholdEnabled = settingsObj.optBoolean("withdrawalThresholdEnabled", false),
+                withdrawalThresholdMg = settingsObj.optInt("withdrawalThresholdMg", 30),
+                wakeTimeHour = settingsObj.optInt("wakeTimeHour", 7),
+                wakeTimeMinute = settingsObj.optInt("wakeTimeMinute", 0),
                 themeMode = ThemeMode.fromStorage(settingsObj.optString("themeMode")),
+                chartLogScale = settingsObj.optBoolean("chartLogScale", false),
+                chartYAxisMaxMg = settingsObj.optInt("chartYAxisMaxMg", 0),
                 useDynamicColor = settingsObj.optBoolean("useDynamicColor", true),
                 use24HourClock = settingsObj.optBoolean("use24HourClock", false),
                 dateFormat = AppDateFormat.fromStorage(settingsObj.optString("dateFormat")),
@@ -213,6 +265,7 @@ class BackupManager(
                 imageName = obj.optString("imageName", ""),
                 emoji = obj.optString("emoji", "☕"),
                 absorptionRate = obj.optInt("absorptionRate", 45),
+                delayMinutes = obj.optInt("delayMinutes", 0),
                 relevance = obj.optInt("relevance", 0),
                 defaultUnit = obj.optString("defaultUnit", "cup"),
                 defaultCaffeineMg = obj.optInt("defaultCaffeineMg", 0),
@@ -233,6 +286,12 @@ class BackupManager(
                     )
                 )
             }
+        }
+
+        val favoriteArray = root.optJSONArray("favoriteItemIds") ?: JSONArray()
+        for (i in 0 until favoriteArray.length()) {
+            val itemId = favoriteArray.optString(i, "")
+            if (itemId.isNotBlank()) presetDao.markFavoriteByItemId(itemId)
         }
     }
 }

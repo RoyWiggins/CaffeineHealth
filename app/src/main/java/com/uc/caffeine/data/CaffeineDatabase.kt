@@ -9,17 +9,19 @@ import androidx.sqlite.db.SupportSQLiteDatabase
 import com.uc.caffeine.data.dao.ConsumptionLogDao
 import com.uc.caffeine.data.dao.DrinkPresetDao
 import com.uc.caffeine.data.dao.DrinkUnitDao
+import com.uc.caffeine.data.dao.HeadacheLogDao
 import com.uc.caffeine.data.model.ConsumptionEntry
 import com.uc.caffeine.data.model.DrinkPreset
 import com.uc.caffeine.data.model.DrinkUnit
+import com.uc.caffeine.data.model.HeadacheEntry
 import com.uc.caffeine.data.model.defaultDrinkPresets
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 
 @Database(
-    entities = [DrinkPreset::class, DrinkUnit::class, ConsumptionEntry::class],
-    version = 10,
+    entities = [DrinkPreset::class, DrinkUnit::class, ConsumptionEntry::class, HeadacheEntry::class],
+    version = 14,
     exportSchema = false
 )
 abstract class CaffeineDatabase : RoomDatabase() {
@@ -27,6 +29,7 @@ abstract class CaffeineDatabase : RoomDatabase() {
     abstract fun drinkPresetDao(): DrinkPresetDao
     abstract fun drinkUnitDao(): DrinkUnitDao
     abstract fun consumptionLogDao(): ConsumptionLogDao
+    abstract fun headacheLogDao(): HeadacheLogDao
 
     companion object {
         @Volatile
@@ -38,6 +41,44 @@ abstract class CaffeineDatabase : RoomDatabase() {
             }
         }
 
+        private val MIGRATION_10_11 = object : Migration(10, 11) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE drink_presets ADD COLUMN delayMinutes INTEGER NOT NULL DEFAULT 0")
+                db.execSQL("ALTER TABLE consumption_log ADD COLUMN delayMinutes INTEGER NOT NULL DEFAULT 0")
+            }
+        }
+
+        private val MIGRATION_11_12 = object : Migration(11, 12) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS headache_log (
+                        id INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
+                        startedAtMillis INTEGER NOT NULL,
+                        severity INTEGER NOT NULL DEFAULT 2,
+                        note TEXT NOT NULL DEFAULT ''
+                    )
+                    """.trimIndent()
+                )
+            }
+        }
+
+        private val MIGRATION_12_13 = object : Migration(12, 13) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE drink_presets ADD COLUMN isFavorite INTEGER NOT NULL DEFAULT 0")
+            }
+        }
+
+        private val MIGRATION_13_14 = object : Migration(13, 14) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE consumption_log ADD COLUMN taken INTEGER NOT NULL DEFAULT 1")
+                // Entries already in the future at migration time are scheduled,
+                // not yet taken; everything in the past stays taken.
+                val now = System.currentTimeMillis()
+                db.execSQL("UPDATE consumption_log SET taken = 0 WHERE startedAtMillis > $now")
+            }
+        }
+
         fun getDatabase(context: Context): CaffeineDatabase {
             return INSTANCE ?: synchronized(this) {
                 val instance = Room.databaseBuilder(
@@ -45,7 +86,13 @@ abstract class CaffeineDatabase : RoomDatabase() {
                     CaffeineDatabase::class.java,
                     "caffeine_database"
                 )
-                    .addMigrations(MIGRATION_9_10)
+                    .addMigrations(
+                        MIGRATION_9_10,
+                        MIGRATION_10_11,
+                        MIGRATION_11_12,
+                        MIGRATION_12_13,
+                        MIGRATION_13_14,
+                    )
                     .addCallback(object : RoomDatabase.Callback() {
                         override fun onCreate(db: SupportSQLiteDatabase) {
                             super.onCreate(db)

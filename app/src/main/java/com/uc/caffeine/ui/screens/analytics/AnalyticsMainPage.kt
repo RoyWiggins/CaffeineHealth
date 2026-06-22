@@ -1,5 +1,6 @@
 package com.uc.caffeine.ui.screens.analytics
 
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -7,6 +8,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -16,6 +18,7 @@ import androidx.compose.material.icons.automirrored.rounded.KeyboardArrowRight
 import androidx.compose.material.icons.filled.Bedtime
 import androidx.compose.material.icons.filled.PieChart
 import androidx.compose.material.icons.filled.Schedule
+import androidx.compose.material.icons.filled.Sick
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ElevatedCard
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
@@ -37,6 +40,8 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawWithCache
+import androidx.compose.ui.geometry.CornerRadius
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.stringResource
@@ -62,6 +67,10 @@ import com.uc.caffeine.ui.components.CaffeineScreenScaffold
 import com.uc.caffeine.ui.components.rememberAppHaptics
 import com.uc.caffeine.util.AnalyticsRange
 import com.uc.caffeine.util.AnalyticsUiState
+import com.uc.caffeine.util.DailyIntakeStat
+import androidx.compose.ui.Alignment
+import java.time.format.TextStyle
+import java.util.Locale
 import kotlin.math.roundToInt
 
 private data class AnalyticsNavItem(
@@ -79,6 +88,7 @@ internal fun AnalyticsMainPage(
     onSourcesClick: () -> Unit,
     onBedtimeClick: () -> Unit,
     onTimeOfDayClick: () -> Unit,
+    onWithdrawalClick: () -> Unit,
 ) {
     val haptics = rememberAppHaptics()
 
@@ -100,6 +110,12 @@ internal fun AnalyticsMainPage(
                 )
             }
 
+            if (uiState.last7DaysIntake.any { it.totalMg > 0 }) {
+                item {
+                    Last7DaysIntakeCard(stats = uiState.last7DaysIntake)
+                }
+            }
+
             if (uiState.hasData) {
                 item {
                     AnalyticsSummaryCard(uiState = uiState)
@@ -118,6 +134,10 @@ internal fun AnalyticsMainPage(
                             haptics.navigation()
                             onTimeOfDayClick()
                         },
+                        onWithdrawalClick = {
+                            haptics.navigation()
+                            onWithdrawalClick()
+                        },
                     )
                 }
             } else {
@@ -135,6 +155,7 @@ private fun AnalyticsNavCard(
     onSourcesClick: () -> Unit,
     onBedtimeClick: () -> Unit,
     onTimeOfDayClick: () -> Unit,
+    onWithdrawalClick: () -> Unit,
 ) {
     val items = listOf(
         AnalyticsNavItem(
@@ -148,6 +169,12 @@ private fun AnalyticsNavCard(
             summary = stringResource(R.string.analytics_bedtime_impact_summary),
             icon = Icons.Filled.Bedtime,
             onClick = onBedtimeClick,
+        ),
+        AnalyticsNavItem(
+            title = stringResource(R.string.analytics_withdrawal_impact),
+            summary = stringResource(R.string.analytics_withdrawal_impact_summary),
+            icon = Icons.Filled.Sick,
+            onClick = onWithdrawalClick,
         ),
         AnalyticsNavItem(
             title = stringResource(R.string.analytics_when_you_drink),
@@ -268,6 +295,116 @@ private fun AnalyticsSummaryCard(uiState: AnalyticsUiState) {
                         value = stringResource(R.string.analytics_value_mg, uiState.sleepThresholdMg.roundToInt()),
                         modifier = Modifier.weight(1f),
                         contentColor = contentColor,
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun Last7DaysIntakeCard(stats: List<DailyIntakeStat>) {
+    val maxTotal = (stats.maxOfOrNull { it.totalMg }?.takeIf { it > 0 } ?: 1).toFloat()
+    val maxMin = stats.maxOfOrNull { it.minCaffeineMg }?.takeIf { it > 0.0 } ?: 1.0
+    val today = remember { java.time.LocalDate.now() }
+
+    val barColor = MaterialTheme.colorScheme.primary
+    val barColorMuted = MaterialTheme.colorScheme.primary.copy(alpha = 0.45f)
+    val lineColor = MaterialTheme.colorScheme.tertiary
+
+    ElevatedCard(
+        modifier = Modifier.fillMaxWidth(),
+        shape = AnalyticsCardShape,
+        colors = CardDefaults.elevatedCardColors(
+            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+        ),
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 20.dp, vertical = 20.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            Text(
+                text = stringResource(R.string.analytics_last_7_days_title),
+                style = MaterialTheme.typography.titleMedium,
+            )
+            Text(
+                text = stringResource(R.string.analytics_last_7_days_legend),
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+
+            // Total-intake (mg) labels above each bar.
+            Row(modifier = Modifier.fillMaxWidth().padding(top = 4.dp)) {
+                stats.forEach { stat ->
+                    Text(
+                        text = "${stat.totalMg}",
+                        modifier = Modifier.weight(1f),
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                    )
+                }
+            }
+
+            // Bars (total intake) with the daily-low concentration drawn as an overlaid line.
+            Canvas(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(120.dp),
+            ) {
+                val count = stats.size
+                if (count == 0) return@Canvas
+                val colWidth = size.width / count
+                val barWidth = colWidth * 0.55f
+                val corner = CornerRadius(6.dp.toPx(), 6.dp.toPx())
+
+                stats.forEachIndexed { index, stat ->
+                    if (stat.totalMg > 0) {
+                        val frac = (stat.totalMg / maxTotal).coerceIn(0f, 1f)
+                        val barHeight = frac * size.height
+                        val left = index * colWidth + (colWidth - barWidth) / 2f
+                        drawRoundRect(
+                            color = if (stat.date == today) barColor else barColorMuted,
+                            topLeft = Offset(left, size.height - barHeight),
+                            size = Size(barWidth, barHeight),
+                            cornerRadius = corner,
+                        )
+                    }
+                }
+
+                val points = stats.mapIndexed { index, stat ->
+                    val frac = (stat.minCaffeineMg / maxMin).toFloat().coerceIn(0f, 1f)
+                    Offset(
+                        x = (index + 0.5f) * colWidth,
+                        y = size.height - frac * size.height,
+                    )
+                }
+                for (i in 0 until points.size - 1) {
+                    drawLine(
+                        color = lineColor,
+                        start = points[i],
+                        end = points[i + 1],
+                        strokeWidth = 2.dp.toPx(),
+                    )
+                }
+                points.forEach { point ->
+                    drawCircle(color = lineColor, radius = 3.dp.toPx(), center = point)
+                }
+            }
+
+            // Day-of-week labels below each bar.
+            Row(modifier = Modifier.fillMaxWidth()) {
+                stats.forEach { stat ->
+                    val isToday = stat.date == today
+                    Text(
+                        text = stat.date.dayOfWeek.getDisplayName(TextStyle.NARROW, Locale.getDefault()),
+                        modifier = Modifier.weight(1f),
+                        style = MaterialTheme.typography.labelSmall,
+                        textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                        color = if (isToday) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                        fontWeight = if (isToday) FontWeight.Bold else FontWeight.Normal,
                     )
                 }
             }

@@ -164,6 +164,29 @@ fun calculateNextBedtimeMillis(
     return bedtime.toInstant().toEpochMilli()
 }
 
+/**
+ * Returns the next occurrence of the user's designated wake-up time, in epoch millis.
+ * Used by the morning withdrawal warning to project caffeine at wake-up.
+ */
+fun calculateNextWakeTimeMillis(
+    currentTimeMillis: Long,
+    settings: UserSettings,
+): Long {
+    val zoneId = settings.resolvedZoneId()
+    val currentZonedTime = Instant.ofEpochMilli(currentTimeMillis).atZone(zoneId)
+    var wake = currentZonedTime
+        .withHour(settings.wakeTimeHour)
+        .withMinute(settings.wakeTimeMinute)
+        .withSecond(0)
+        .withNano(0)
+
+    if (wake.toInstant().toEpochMilli() <= currentTimeMillis) {
+        wake = wake.plusDays(1)
+    }
+
+    return wake.toInstant().toEpochMilli()
+}
+
 fun combineDateWithTime(
     baseTimestamp: Long,
     hour: Int,

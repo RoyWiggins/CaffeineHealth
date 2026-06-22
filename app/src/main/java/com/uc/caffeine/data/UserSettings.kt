@@ -108,6 +108,34 @@ data class UserSettings(
     val sleepTimeMinute: Int = 0,
 
     /**
+     * Whether the withdrawal warning is active. Opt-in, since it only matters to
+     * people who deliberately keep some caffeine on board overnight.
+     */
+    val withdrawalThresholdEnabled: Boolean = false,
+
+    /**
+     * Threshold for the morning withdrawal warning, in mg.
+     * If projected active caffeine at [wakeTimeHour]:[wakeTimeMinute] drops below
+     * this level, the user is warned they may wake up in withdrawal.
+     * Default: 30mg
+     */
+    val withdrawalThresholdMg: Int = 30,
+
+    /**
+     * Designated wake-up hour (24-hour format) used by the withdrawal warning.
+     * Default: 7 (7am)
+     * Range: 0-23
+     */
+    val wakeTimeHour: Int = 7,
+
+    /**
+     * Designated wake-up minute used by the withdrawal warning.
+     * Default: 0 (on the hour)
+     * Range: 0-59
+     */
+    val wakeTimeMinute: Int = 0,
+
+    /**
      * App theme mode preference.
      * SYSTEM follows the device theme. LIGHT and DARK override it.
      */
@@ -168,6 +196,18 @@ data class UserSettings(
     val whatsNewLastSeenVersion: Int = 0,
     val homeViewMode: HomeViewMode = HomeViewMode.GRAPH,
     val colorPalette: AppColorPalette = AppColorPalette.DYNAMIC,
+
+    /**
+     * Whether the Home caffeine chart uses a logarithmic Y axis. Useful for
+     * seeing low residual caffeine levels that a linear scale flattens to zero.
+     */
+    val chartLogScale: Boolean = false,
+
+    /**
+     * Manual maximum for the Home chart's Y axis, in mg. 0 = auto (scale to the
+     * data). A fixed cap is handy for monitoring a taper at a steady zoom.
+     */
+    val chartYAxisMaxMg: Int = 0,
     val weeklySleepRotaEnabled: Boolean = false,
     val weeklySleepRota: Map<DayOfWeek, LocalTime> = emptyMap(),
 ) {

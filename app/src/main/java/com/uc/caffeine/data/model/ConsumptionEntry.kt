@@ -4,7 +4,21 @@ import androidx.room.Entity
 import androidx.room.PrimaryKey
 
 const val DEFAULT_CONSUMPTION_DURATION_MINUTES = 10
+
+// Pills/capsules are swallowed in one go, so they default to the shortest
+// meaningful window rather than the sip-over-time default used for drinks.
+const val DEFAULT_PILL_DURATION_MINUTES = 1
 private const val MINUTE_IN_MILLIS = 60_000L
+
+/** The default "time to finish" for a drink in [category] — instant for pills. */
+fun defaultConsumptionDurationMinutes(category: String): Int {
+    val key = category.trim().lowercase()
+    return if (key == "pill" || key == "pills") {
+        DEFAULT_PILL_DURATION_MINUTES
+    } else {
+        DEFAULT_CONSUMPTION_DURATION_MINUTES
+    }
+}
 
 // This table stores EVERY drink the user logs — one row per drink consumed
 // This is how we get:
@@ -38,6 +52,12 @@ data class ConsumptionEntry(
     // Stored here (not FK) so historical data remains accurate even if preset changes
     val absorptionRate: Int = 45,
 
+    // Release delay in minutes — how long after consumption the caffeine actually
+    // starts entering the bloodstream. 0 for ordinary drinks; > 0 for delayed-release
+    // pills that only kick in some hours later. Stored here (not FK) so historical
+    // data stays accurate even if the preset changes.
+    val delayMinutes: Int = 0,
+
     // Start time for this consumption window.
     // This is the canonical timestamp used for sorting, grouping, and display.
     val startedAtMillis: Long = System.currentTimeMillis(),
@@ -48,10 +68,28 @@ data class ConsumptionEntry(
     // Non-null = this row was imported from another app via Health Connect (we don't own it).
     // Null = logged by this app (we own it and push it to HC).
     val healthConnectRecordId: String? = null,
+
+    // Whether the drink has actually been taken. Entries logged in the past start
+    // taken; entries scheduled for the future start not-taken and can be confirmed
+    // later (in-app or from the reminder notification).
+    val taken: Boolean = true,
 ) {
     val normalizedDurationMinutes: Int
         get() = durationMinutes.coerceAtLeast(1)
 
     val finishedAtMillis: Long
         get() = startedAtMillis + (normalizedDurationMinutes * MINUTE_IN_MILLIS)
+
+    /**
+     * When the caffeine actually begins entering the bloodstream, accounting for any
+     * delayed-release [delayMinutes]. Equal to [startedAtMillis] for ordinary drinks.
+     */
+    val effectiveStartMillis: Long
+        get() = startedAtMillis + (delayMinutes.coerceAtLeast(0) * MINUTE_IN_MILLIS)
+
+    /**
+     * When the (delayed) consumption window finishes — used for peak-time search bounds.
+     */
+    val effectiveFinishMillis: Long
+        get() = effectiveStartMillis + (normalizedDurationMinutes * MINUTE_IN_MILLIS)
 }

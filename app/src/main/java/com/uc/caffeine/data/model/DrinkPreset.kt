@@ -16,6 +16,11 @@ data class DrinkPreset(
     val imageName: String = "",
     val emoji: String = "☕",
     val absorptionRate: Int = 45,
+
+    // Release delay in minutes before the caffeine starts entering the bloodstream.
+    // 0 for ordinary drinks; > 0 for delayed-release pills.
+    val delayMinutes: Int = 0,
+
     val relevance: Int = 0,
     val defaultUnit: String = "cup",
 
@@ -23,7 +28,10 @@ data class DrinkPreset(
     // The full per-unit values live in drink_units table
     val defaultCaffeineMg: Int = 0,
 
-    val isCustom: Boolean = false
+    val isCustom: Boolean = false,
+
+    // User-pinned favorite — surfaced above recent servings on the Add screen.
+    val isFavorite: Boolean = false
 )
 
 val defaultDrinkPresets = listOf(

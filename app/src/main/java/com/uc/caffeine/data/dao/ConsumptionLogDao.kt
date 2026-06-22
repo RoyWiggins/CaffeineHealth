@@ -3,6 +3,7 @@ package com.uc.caffeine.data.dao
 import androidx.room.Dao
 import androidx.room.Insert
 import androidx.room.Query
+import androidx.room.Update
 import com.uc.caffeine.data.model.ConsumptionEntry
 import com.uc.caffeine.data.model.RecentDrink
 import kotlinx.coroutines.flow.Flow
@@ -22,7 +23,8 @@ interface ConsumptionLogDao {
             unitKey = :unitKey,
             unitCaffeineMg = :unitCaffeineMg,
             startedAtMillis = :startedAtMillis,
-            durationMinutes = :durationMinutes
+            durationMinutes = :durationMinutes,
+            taken = :taken
         WHERE id = :entryId
         """
     )
@@ -34,7 +36,15 @@ interface ConsumptionLogDao {
         unitCaffeineMg: Double,
         startedAtMillis: Long,
         durationMinutes: Int,
+        taken: Boolean,
     )
+
+    @Query("UPDATE consumption_log SET taken = 1 WHERE id = :entryId")
+    suspend fun markTaken(entryId: Int)
+
+    // Full-entity update — used when editing changes the drink type (identity fields).
+    @Update
+    suspend fun updateEntry(entry: ConsumptionEntry)
 
     @Query("DELETE FROM consumption_log WHERE id = :entryId")
     suspend fun deleteEntryById(entryId: Int)
@@ -57,6 +67,10 @@ interface ConsumptionLogDao {
     // One-shot read of all entries — used for Health Connect bulk sync
     @Query("SELECT * FROM consumption_log ORDER BY startedAtMillis DESC")
     suspend fun getAllEntriesOnce(): List<ConsumptionEntry>
+
+    // Entries scheduled for the future — used to re-arm "take it" reminders after reboot
+    @Query("SELECT * FROM consumption_log WHERE startedAtMillis > :nowMillis ORDER BY startedAtMillis ASC")
+    suspend fun getFutureEntriesOnce(nowMillis: Long): List<ConsumptionEntry>
 
     // One-shot today read — used by Reset Today to collect HC record ids before clearing
     @Query("SELECT * FROM consumption_log WHERE startedAtMillis >= :startOfDay ORDER BY startedAtMillis DESC")
@@ -88,6 +102,7 @@ interface ConsumptionLogDao {
             c1.unitCaffeineMg,
             c1.imageName,
             c1.absorptionRate,
+            c1.delayMinutes,
             c1.durationMinutes,
             c1.startedAtMillis as lastUsed
         FROM consumption_log c1
@@ -118,6 +133,7 @@ interface ConsumptionLogDao {
             c1.unitCaffeineMg,
             c1.imageName,
             c1.absorptionRate,
+            c1.delayMinutes,
             c1.durationMinutes,
             c1.startedAtMillis as lastUsed
         FROM consumption_log c1

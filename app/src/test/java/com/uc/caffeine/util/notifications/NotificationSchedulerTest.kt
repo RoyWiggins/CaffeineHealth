@@ -83,6 +83,20 @@ class NotificationSchedulerTest {
         assert(code >= 1000) { "Request code should be >= 1000, was $code" }
     }
 
+    // drinkReminderRequestCode
+
+    @Test
+    fun drinkReminderRequestCode_isStablePerEntryAndDistinctFromOtherReminders() {
+        val codeA = NotificationScheduler.drinkReminderRequestCode(42)
+        val codeAagain = NotificationScheduler.drinkReminderRequestCode(42)
+        val codeB = NotificationScheduler.drinkReminderRequestCode(43)
+
+        assertEquals(codeA, codeAagain)
+        assertNotEquals(codeA, codeB)
+        // Well clear of the daily-reminder (1000+) and inactivity (9999) request codes.
+        assert(codeA > 1_000_000) { "Drink reminder codes should not collide with other reminders, was $codeA" }
+    }
+
     // formatTimeKey
 
     @Test

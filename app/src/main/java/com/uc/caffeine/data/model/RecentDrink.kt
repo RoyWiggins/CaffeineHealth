@@ -13,6 +13,7 @@ data class RecentDrink(
     val unitCaffeineMg: Double,
     val imageName: String,
     val absorptionRate: Int,
+    val delayMinutes: Int,
     val durationMinutes: Int,
     val lastUsed: Long  // MAX(timestamp) aliased as lastUsed in the query
 )

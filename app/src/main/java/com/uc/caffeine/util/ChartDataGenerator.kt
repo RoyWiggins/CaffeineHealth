@@ -1,6 +1,7 @@
 package com.uc.caffeine.util
 
 import com.uc.caffeine.data.model.ConsumptionEntry
+import com.uc.caffeine.data.model.HeadacheEntry
 import com.uc.caffeine.data.UserSettings
 import kotlin.math.abs
 import kotlin.math.max
@@ -19,7 +20,6 @@ object ChartDataGenerator {
     private const val HOURLY_HISTORY_DAYS = 7
     private const val THREE_HOURLY_HISTORY_DAYS = 30
     private const val ONE_HOUR_MILLIS = 60 * 60 * 1000L
-    private const val THIRTY_MINUTES_MILLIS = 30 * 60 * 1000L
     private const val THREE_HOURS_MILLIS = 3 * ONE_HOUR_MILLIS
     private const val SIX_HOURS_MILLIS = 6 * ONE_HOUR_MILLIS
     private const val ONE_DAY_MILLIS = 24 * ONE_HOUR_MILLIS
@@ -57,7 +57,8 @@ object ChartDataGenerator {
     fun generateChartData(
         entries: List<ConsumptionEntry>,
         settings: UserSettings,
-        currentTime: Long = System.currentTimeMillis()
+        currentTime: Long = System.currentTimeMillis(),
+        headaches: List<HeadacheEntry> = emptyList(),
     ): ChartData {
         val bedtime = calculateNextBedtimeMillis(currentTime, settings)
         val baselineReturnTime = predictFutureBaselineReturnTime(
@@ -105,11 +106,47 @@ object ChartDataGenerator {
                 currentTime = currentTime,
                 dataPoints = dataPoints,
             ),
+            headacheMarkers = buildHeadacheMarkers(
+                headaches = headaches,
+                entries = entries,
+                domainStartTime = domainStartTime,
+                endTime = endTime,
+                halfLifeMinutes = settings.effectiveHalfLifeMinutes,
+            ),
             thresholdLevel = settings.sleepThresholdMg.toDouble(),
             bedtimeMillis = bedtime,
             currentTimeMillis = currentTime,
             domainStartMillis = domainStartTime,
         )
+    }
+
+    private fun buildHeadacheMarkers(
+        headaches: List<HeadacheEntry>,
+        entries: List<ConsumptionEntry>,
+        domainStartTime: Long,
+        endTime: Long,
+        halfLifeMinutes: Int,
+    ): List<ChartHeadacheMarker> {
+        return headaches
+            .asSequence()
+            .filter { it.startedAtMillis in domainStartTime..endTime }
+            .map { headache ->
+                val inferred = CaffeineCalculator.calculateCurrentLevel(
+                    entries = entries,
+                    currentTimeMillis = headache.startedAtMillis,
+                    halfLifeMinutes = halfLifeMinutes,
+                )
+                ChartHeadacheMarker(
+                    xValue = timestampToDomainX(domainStartTime, headache.startedAtMillis),
+                    yValue = toDisplayCaffeineLevel(inferred, hasEntries = entries.isNotEmpty()),
+                    headacheId = headache.id,
+                    severity = headache.severity,
+                    inferredCaffeineMg = inferred,
+                    timestampMillis = headache.startedAtMillis,
+                )
+            }
+            .sortedBy { it.xValue }
+            .toList()
     }
 
     private fun predictFutureBaselineReturnTime(
@@ -357,6 +394,7 @@ object ChartDataGenerator {
             alignedResolutionBoundary(currentTime - THIRTY_DAYS_MILLIS),
             alignedResolutionBoundary(currentTime - SEVEN_DAYS_MILLIS),
             alignedResolutionBoundary(currentTime - RECENT_HISTORY_HOURS * ONE_HOUR_MILLIS),
+            alignedResolutionBoundary(currentTime + THREE_DAYS_MILLIS),
         )
 
         return boundaries.filter { it > pointTime }.minOrNull() ?: Long.MAX_VALUE
@@ -375,9 +413,9 @@ object ChartDataGenerator {
         val futureOffsetMillis = timestampMillis - currentTime
         val ageMillis = currentTime - timestampMillis
         return when {
+            // Keep full 15-minute detail for the next three days so upcoming
+            // caffeine (including delayed-release doses) is drawn precisely.
             futureOffsetMillis > THREE_DAYS_MILLIS -> THREE_HOURS_MILLIS
-            futureOffsetMillis > ONE_DAY_MILLIS -> ONE_HOUR_MILLIS
-            futureOffsetMillis > SIX_HOURS_MILLIS -> THIRTY_MINUTES_MILLIS
             ageMillis > THIRTY_DAYS_MILLIS -> SIX_HOURS_MILLIS
             ageMillis > SEVEN_DAYS_MILLIS -> THREE_HOURS_MILLIS
             ageMillis > ONE_DAY_MILLIS -> ONE_HOUR_MILLIS
@@ -443,6 +481,8 @@ object ChartDataGenerator {
                             emoji = entry.emoji,
                             imageName = entry.imageName,
                             caffeineMg = entry.caffeineMg,
+                            // Past-due but not confirmed taken — flag for a red border.
+                            overdue = !entry.taken && entry.startedAtMillis <= currentTime,
                         )
                     },
                     timestampMillis = groupedEntries.first().startedAtMillis,
@@ -494,10 +534,20 @@ data class CaffeineDataPoint(
 data class ChartData(
     val dataPoints: List<CaffeineDataPoint>,
     val consumptionMarkers: List<ChartConsumptionMarker>,
+    val headacheMarkers: List<ChartHeadacheMarker> = emptyList(),
     val thresholdLevel: Double,
     val bedtimeMillis: Long,
     val currentTimeMillis: Long,
     val domainStartMillis: Long,
+)
+
+data class ChartHeadacheMarker(
+    val xValue: Double,
+    val yValue: Double,
+    val headacheId: Int,
+    val severity: Int,
+    val inferredCaffeineMg: Double,
+    val timestampMillis: Long,
 )
 
 data class ChartMarkerEntry(
@@ -506,6 +556,7 @@ data class ChartMarkerEntry(
     val emoji: String,
     val imageName: String,
     val caffeineMg: Int,
+    val overdue: Boolean = false,
 )
 
 data class ChartConsumptionMarker(

@@ -26,10 +26,13 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.IntOffset
 import com.uc.caffeine.util.ChartConsumptionMarker
+import com.uc.caffeine.util.ChartHeadacheMarker
 import com.uc.caffeine.util.ChartMarkerEntry
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.automirrored.rounded.ArrowForward
+import androidx.compose.material.icons.rounded.KeyboardArrowDown
+import androidx.compose.material.icons.rounded.KeyboardArrowUp
 import androidx.compose.ui.platform.LocalFontFamilyResolver
 import com.uc.caffeine.data.AppDateFormat
 import com.uc.caffeine.ui.theme.MontserratFamily
@@ -44,6 +47,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.width
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.Icon
 import androidx.compose.runtime.Composable
@@ -113,7 +117,9 @@ import java.time.ZonedDateTime
 import java.time.format.DateTimeFormatter
 import java.time.temporal.ChronoUnit
 import java.util.Locale
+import kotlin.math.log10
 import kotlin.math.max
+import kotlin.math.pow
 import kotlin.math.min
 import kotlin.math.roundToInt
 import kotlin.math.roundToLong
@@ -175,6 +181,48 @@ internal fun buildHomeChartDisplaySeries(
     )
 }
 
+// Log-scale Y-axis mapping. Values are mapped relative to a floor (the bottom of
+// the chart): log10(max(v, floor) / floor). The floor maps to 0 so the area fill
+// still reaches the axis baseline, and anything at or below the floor is pinned to
+// the bottom. Keeping the axis minimum at 0 lets the regular step tick-placer work.
+internal fun caffeineToAxisSpace(value: Double, logScale: Boolean, floorMg: Double = 1.0): Double =
+    if (logScale) log10(value.coerceAtLeast(floorMg) / floorMg) else value
+
+internal fun axisSpaceToCaffeine(axisValue: Double, logScale: Boolean, floorMg: Double = 1.0): Double =
+    if (logScale) floorMg * (10.0).pow(axisValue) else axisValue
+
+// "Nice" Y-axis caps the zoom controls step through; 0 (auto) sits above the top.
+// Finer at the low end for taper monitoring, topping out at a realistic 500 mg.
+internal val YAxisMaxLadderMg = listOf(25, 50, 75, 100, 150, 200, 300, 400, 500)
+
+/** The next manual Y-axis cap (mg) when stepping the chart zoom; 0 means auto. */
+internal fun nextYAxisMaxMg(currentMg: Int, autoMaxMg: Int, zoomIn: Boolean): Int {
+    return if (zoomIn) {
+        val reference = if (currentMg > 0) currentMg else autoMaxMg
+        YAxisMaxLadderMg.lastOrNull { it < reference } ?: YAxisMaxLadderMg.first()
+    } else {
+        if (currentMg <= 0) 0 else YAxisMaxLadderMg.firstOrNull { it > currentMg } ?: 0
+    }
+}
+
+/** A "nice" round gridline step (1/1.5/2/2.5/3/5/10 × 10ⁿ) giving ~5 intervals up to [maxMg]. */
+internal fun niceAxisStepMg(maxMg: Double, targetTicks: Int = 5): Double {
+    if (maxMg <= 0.0) return 1.0
+    val rough = maxMg / targetTicks
+    val magnitude = 10.0.pow(kotlin.math.floor(log10(rough)))
+    val normalized = rough / magnitude
+    val nice = when {
+        normalized <= 1.0 -> 1.0
+        normalized <= 1.5 -> 1.5
+        normalized <= 2.0 -> 2.0
+        normalized <= 2.5 -> 2.5
+        normalized <= 3.0 -> 3.0
+        normalized <= 5.0 -> 5.0
+        else -> 10.0
+    }
+    return nice * magnitude
+}
+
 private fun CartesianDrawingContext.xToCanvas(xValue: Double): Float {
     val fullRangeStart = ranges.minX - layerDimensions.startPadding / layerDimensions.xSpacing * ranges.xStep
     val offsetPx = ((xValue - fullRangeStart) / ranges.xStep).toFloat() * layerDimensions.xSpacing
@@ -192,6 +240,9 @@ fun CaffeineChart(
     predictedBedtimeCaffeineLevel: Double,
     modifier: Modifier = Modifier,
     onEntryClick: ((entryId: Int) -> Unit)? = null,
+    onHeadacheClick: ((headacheId: Int) -> Unit)? = null,
+    chartYAxisMaxMg: Int = 0,
+    onSetYAxisMax: ((mg: Int) -> Unit)? = null,
 ) {
     val colorScheme = MaterialTheme.colorScheme
     val displaySeries = remember(chartData, liveNowMillis) {
@@ -204,12 +255,39 @@ fun CaffeineChart(
         displaySeries.yValues.maxOrNull() ?: 0.0
     }
 
-    val yAxisStep = remember(maxCaffeine) {
-        maxOf(100.0, kotlin.math.ceil(maxCaffeine / 3.0 / 100.0) * 100.0)
+    val logScale = userSettings.chartLogScale
+
+    // In log mode the chart bottoms out at half the withdrawal threshold (or 10mg
+    // if no withdrawal threshold is set) instead of zero.
+    val logFloor = remember(userSettings.withdrawalThresholdEnabled, userSettings.withdrawalThresholdMg) {
+        (if (userSettings.withdrawalThresholdEnabled) userSettings.withdrawalThresholdMg / 2.0 else 10.0)
+            .coerceAtLeast(1.0)
     }
-    
-    val yAxisMax = remember(yAxisStep) {
-        yAxisStep * 4.0
+
+    // Data-driven ("auto") max, used when no manual cap is set and to seed the
+    // first manual zoom step.
+    val autoYAxisMax = remember(maxCaffeine) {
+        maxOf(100.0, kotlin.math.ceil(maxCaffeine / 3.0 / 100.0) * 100.0) * 4.0
+    }
+
+    val yAxisMax = remember(autoYAxisMax, chartYAxisMaxMg) {
+        if (chartYAxisMaxMg > 0) chartYAxisMaxMg.toDouble() else autoYAxisMax
+    }
+
+    // The axis is plotted in "axis space" (identity for linear, floor-relative
+    // log10 for log). All Y positions — the line series, range, ticks, threshold
+    // lines, and marker placement — must be in this same space to stay aligned.
+    // Both values are kept strictly positive: a manual cap below the log floor
+    // (or any other degenerate input) would otherwise collapse the range to 0 and
+    // crash the axis tick-placer (division by zero).
+    val axisMaxY = remember(yAxisMax, logScale, logFloor) {
+        val raw = if (logScale) caffeineToAxisSpace(yAxisMax, true, logFloor) else yAxisMax
+        raw.coerceAtLeast(if (logScale) 0.1 else 1.0)
+    }
+    // Linear: nice round gridline step. Log: even split of the log range.
+    val axisStepY = remember(axisMaxY, yAxisMax, logScale) {
+        val step = if (logScale) axisMaxY / (VERTICAL_AXIS_LABEL_COUNT - 1) else niceAxisStepMg(yAxisMax)
+        step.coerceAtLeast(0.001)
     }
 
     val dataMinX = remember(displaySeries.xValues) {
@@ -225,12 +303,12 @@ fun CaffeineChart(
         dataMaxX + TIMELINE_SCROLL_BUFFER_UNITS
     }
 
-    val rangeProvider = remember(bufferedMinX, bufferedMaxX, yAxisMax) {
+    val rangeProvider = remember(bufferedMinX, bufferedMaxX, axisMaxY) {
         CartesianLayerRangeProvider.fixed(
             minX = bufferedMinX,
             maxX = bufferedMaxX,
             minY = 0.0,
-            maxY = yAxisMax
+            maxY = axisMaxY
         )
     }
 
@@ -241,20 +319,26 @@ fun CaffeineChart(
     // line-series x-values and the axis x-range are never from different
     // snapshots of chartData, which previously caused one-frame visual
     // glitches ("broken" look) whenever domainStartMillis shifted.
+    val seriesYValues = remember(displaySeries.yValues, logScale, logFloor) {
+        if (logScale) displaySeries.yValues.map { caffeineToAxisSpace(it, true, logFloor) }
+        else displaySeries.yValues
+    }
     var isModelReady by remember { mutableStateOf(false) }
-    LaunchedEffect(displaySeries.xValues, displaySeries.yValues) {
+    // axisMaxY is a key so changing the Y-axis cap re-pushes the model, which makes
+    // Vico recompute the line's vertical range against the new fixed maximum.
+    LaunchedEffect(displaySeries.xValues, seriesYValues, axisMaxY) {
         if (displaySeries.xValues.isNotEmpty()) {
             modelProducer.runTransaction {
                 lineSeries {
-                    series(displaySeries.xValues, displaySeries.yValues)
+                    series(displaySeries.xValues, seriesYValues)
                 }
             }
         }
         isModelReady = true
     }
 
-    val yAxisItemPlacer = remember(yAxisStep) {
-        VerticalAxis.ItemPlacer.step(step = { yAxisStep })
+    val yAxisItemPlacer = remember(axisStepY) {
+        VerticalAxis.ItemPlacer.step(step = { axisStepY })
     }
 
     val bottomAxisFormatter = rememberTimelineAxisValueFormatter(
@@ -266,9 +350,10 @@ fun CaffeineChart(
         spacing = TIMELINE_AXIS_SPACING_UNITS,
         userSettings = userSettings,
     )
-    val yAxisFormatter = remember {
+    val yAxisFormatter = remember(logScale, logFloor) {
         CartesianValueFormatter { _, value, _ ->
-            if (value.roundToInt() == 0) "\u200B" else "${value.roundToInt()}"
+            val realValue = axisSpaceToCaffeine(value, logScale, logFloor)
+            if (realValue.roundToInt() <= 0) "\u200B" else "${realValue.roundToInt()}"
         }
     }
     val labelStyle = MaterialTheme.typography.labelSmall.copy(
@@ -304,9 +389,19 @@ fun CaffeineChart(
         LineCartesianLayer.LineProvider.series(line)
     }
     val thresholdDecoration = rememberThresholdLineDecoration(
-        thresholdLevel = chartData.thresholdLevel,
-        label = "Sleep threshold"
+        thresholdLevel = caffeineToAxisSpace(chartData.thresholdLevel, logScale, logFloor),
+        label = "Sleep threshold",
+        color = SleepReferenceColor,
+        labelAbove = false,
     )
+    val withdrawalDecoration = if (userSettings.withdrawalThresholdEnabled) {
+        rememberThresholdLineDecoration(
+            thresholdLevel = caffeineToAxisSpace(userSettings.withdrawalThresholdMg.toDouble(), logScale, logFloor),
+            label = "Withdrawal",
+            color = MaterialTheme.colorScheme.error,
+            labelAbove = true,
+        )
+    } else null
     val currentTimeX = remember(displaySeries.currentTimeX) {
         displaySeries.currentTimeX
     }
@@ -317,11 +412,13 @@ fun CaffeineChart(
         dashed = false,
         labelAtTop = false,
     )
-    val bedtimeDecorations = rememberDailyBedtimeDecorations(
+    val bedtimeDecorations = rememberDailyTimeDecorations(
         domainStartMillis = chartData.domainStartMillis,
         minX = bufferedMinX,
         maxX = bufferedMaxX,
         userSettings = userSettings,
+        hour = userSettings.sleepTimeHour,
+        minute = userSettings.sleepTimeMinute,
         lineColor = colorScheme.primary.copy(alpha = 0.8f),
         labelColor = colorScheme.primary,
         icon = R.drawable.ic_moon,
@@ -331,8 +428,29 @@ fun CaffeineChart(
         iconSize = BedtimeIconSize,
         iconOnRightSide = true,
     )
+    val wakeDecorations = if (userSettings.withdrawalThresholdEnabled) {
+        rememberDailyTimeDecorations(
+            domainStartMillis = chartData.domainStartMillis,
+            minX = bufferedMinX,
+            maxX = bufferedMaxX,
+            userSettings = userSettings,
+            hour = userSettings.wakeTimeHour,
+            minute = userSettings.wakeTimeMinute,
+            lineColor = colorScheme.tertiary.copy(alpha = 0.8f),
+            labelColor = colorScheme.tertiary,
+            icon = R.drawable.ic_sun,
+            dashed = true,
+            labelAtTop = true,
+            iconTopOffset = BedtimeIconTopOffset,
+            iconSize = BedtimeIconSize,
+            iconOnRightSide = false,
+        )
+    } else {
+        emptyList()
+    }
 
     val markerPositions = remember { mutableMapOf<Double, Offset>() }
+    val headacheMarkerPositions = remember { mutableMapOf<Int, Offset>() }
     var selectedMarker by remember { mutableStateOf<ChartConsumptionMarker?>(null) }
     var popupOffset by remember { mutableStateOf(Offset.Zero) }
 
@@ -345,19 +463,47 @@ fun CaffeineChart(
     val density = LocalDensity.current
     val chartInsetPx = with(density) { 4.dp.toPx() }
 
-    val consumptionDecoration = remember(chartData.consumptionMarkers, yAxisMax, containerColor, strokeColor, dotColor, badgeColor, badgeTextColor) {
+    // Markers store caffeine values; map them into axis space so they sit on the
+    // (possibly logarithmic) curve. xValue / headacheId are unchanged, so the
+    // tap hit-testing keyed on those still lines up.
+    val displayConsumptionMarkers = remember(chartData.consumptionMarkers, logScale, logFloor) {
+        if (!logScale) chartData.consumptionMarkers
+        else chartData.consumptionMarkers.map { it.copy(yValue = caffeineToAxisSpace(it.yValue, true, logFloor)) }
+    }
+    val displayHeadacheMarkers = remember(chartData.headacheMarkers, logScale, logFloor) {
+        if (!logScale) chartData.headacheMarkers
+        else chartData.headacheMarkers.map { it.copy(yValue = caffeineToAxisSpace(it.yValue, true, logFloor)) }
+    }
+
+    val overdueColor = MaterialTheme.colorScheme.error.toArgb()
+    val consumptionDecoration = remember(displayConsumptionMarkers, axisMaxY, containerColor, strokeColor, dotColor, badgeColor, badgeTextColor, overdueColor) {
         ConsumptionImageDecoration(
-            markers = chartData.consumptionMarkers,
+            markers = displayConsumptionMarkers,
             appContext = context,
             yMin = 0.0,
-            yMax = yAxisMax,
+            yMax = axisMaxY,
             containerColor = containerColor,
             strokeColor = strokeColor,
             dotColor = dotColor,
             badgeColor = badgeColor,
             textColor = badgeTextColor,
+            overdueColor = overdueColor,
         ) { xValue, canvasOffset ->
             markerPositions[xValue] = Offset(canvasOffset.x + chartInsetPx, canvasOffset.y + chartInsetPx)
+        }
+    }
+
+    val headacheRingColor = MaterialTheme.colorScheme.error.toArgb()
+    val headacheFillColor = MaterialTheme.colorScheme.errorContainer.toArgb()
+    val headacheDecoration = remember(displayHeadacheMarkers, axisMaxY, headacheRingColor, headacheFillColor) {
+        HeadacheMarkerDecoration(
+            markers = displayHeadacheMarkers,
+            yMin = 0.0,
+            yMax = axisMaxY,
+            fillColor = headacheFillColor,
+            ringColor = headacheRingColor,
+        ) { headacheId, canvasOffset ->
+            headacheMarkerPositions[headacheId] = Offset(canvasOffset.x + chartInsetPx, canvasOffset.y + chartInsetPx)
         }
     }
 
@@ -386,9 +532,11 @@ fun CaffeineChart(
         ),
         decorations = listOfNotNull(
             thresholdDecoration,
+            withdrawalDecoration,
             currentTimeDecoration,
             consumptionDecoration,
-        ) + bedtimeDecorations,
+            headacheDecoration,
+        ) + bedtimeDecorations + wakeDecorations,
     )
 
     val currentTimeXState = rememberUpdatedState(currentTimeX)
@@ -472,8 +620,19 @@ fun CaffeineChart(
     Box(
         modifier = modifier
             .fillMaxSize()
-            .pointerInput(chartData.consumptionMarkers, hitRadiusPx) {
+            .pointerInput(chartData.consumptionMarkers, chartData.headacheMarkers, hitRadiusPx) {
                 detectTapGestures { tap ->
+                    val hitHeadache = chartData.headacheMarkers.firstOrNull { marker ->
+                        val pos = headacheMarkerPositions[marker.headacheId] ?: return@firstOrNull false
+                        val dx = tap.x - pos.x
+                        val dy = tap.y - pos.y
+                        dx * dx + dy * dy < hitRadiusPx * hitRadiusPx
+                    }
+                    if (hitHeadache != null) {
+                        selectedMarker = null
+                        onHeadacheClick?.invoke(hitHeadache.headacheId)
+                        return@detectTapGestures
+                    }
                     val hitMarker = chartData.consumptionMarkers.firstOrNull { marker ->
                         val pos = markerPositions[marker.xValue] ?: return@firstOrNull false
                         val dx = tap.x - pos.x
@@ -516,6 +675,17 @@ fun CaffeineChart(
                 .align(Alignment.TopEnd)
                 .padding(horizontal = 12.dp, vertical = 10.dp),
         )
+
+        if (onSetYAxisMax != null) {
+            YAxisZoomControl(
+                currentMaxMg = chartYAxisMaxMg,
+                onZoomIn = { onSetYAxisMax(nextYAxisMaxMg(chartYAxisMaxMg, autoYAxisMax.roundToInt(), zoomIn = true)) },
+                onZoomOut = { onSetYAxisMax(nextYAxisMaxMg(chartYAxisMaxMg, autoYAxisMax.roundToInt(), zoomIn = false)) },
+                modifier = Modifier
+                    .align(Alignment.TopStart)
+                    .padding(horizontal = 8.dp, vertical = 8.dp),
+            )
+        }
 
         AnimatedVisibility(
             visible = showLeftReturnButton,
@@ -607,6 +777,51 @@ fun CaffeineChart(
                         )
                     }
                 }
+            }
+        }
+    }
+}
+
+@Composable
+private fun YAxisZoomControl(
+    currentMaxMg: Int,
+    onZoomIn: () -> Unit,
+    onZoomOut: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val haptics = rememberAppHaptics()
+    Surface(
+        modifier = modifier,
+        shape = RoundedCornerShape(50),
+        color = MaterialTheme.colorScheme.surfaceContainerHighest.copy(alpha = 0.85f),
+        contentColor = MaterialTheme.colorScheme.onSurfaceVariant,
+    ) {
+        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+            IconButton(
+                onClick = { haptics.toggle(); onZoomOut() },
+                modifier = Modifier.size(28.dp),
+            ) {
+                Icon(
+                    imageVector = Icons.Rounded.KeyboardArrowUp,
+                    contentDescription = stringResource(R.string.chart_y_axis_raise_cd),
+                    modifier = Modifier.size(18.dp),
+                )
+            }
+            Text(
+                text = if (currentMaxMg > 0) "$currentMaxMg" else stringResource(R.string.chart_y_axis_auto),
+                style = MaterialTheme.typography.labelSmall,
+                maxLines = 1,
+                softWrap = false,
+            )
+            IconButton(
+                onClick = { haptics.toggle(); onZoomIn() },
+                modifier = Modifier.size(28.dp),
+            ) {
+                Icon(
+                    imageVector = Icons.Rounded.KeyboardArrowDown,
+                    contentDescription = stringResource(R.string.chart_y_axis_lower_cd),
+                    modifier = Modifier.size(18.dp),
+                )
             }
         }
     }
@@ -1009,41 +1224,45 @@ private fun compactTimelineDateFormatter(
 @Composable
 private fun rememberThresholdLineDecoration(
     thresholdLevel: Double,
-    label: String
+    label: String,
+    color: Color = SleepReferenceColor,
+    labelAbove: Boolean = false,
 ): Decoration {
-    val line = remember {
+    val line = remember(color) {
         LineComponent(
-            fill = Fill(SleepReferenceColor.copy(alpha = 0.65f)),
+            fill = Fill(color.copy(alpha = 0.65f)),
             thickness = 1.dp
         )
     }
     val labelStyle = MaterialTheme.typography.labelSmall.copy(
         fontFamily = MontserratFamily,
-        color = SleepReferenceColor,
+        color = color,
     )
     val labelFontRefreshKey = rememberFontRefreshKey(labelStyle)
-    val labelComponent = key(labelFontRefreshKey) {
+    val labelComponent = key(labelFontRefreshKey, color) {
         rememberTextComponent(style = labelStyle)
     }
 
-    return remember(thresholdLevel, line, labelComponent, label) {
+    return remember(thresholdLevel, line, labelComponent, label, labelAbove) {
         HorizontalLine(
             y = { thresholdLevel },
             line = line,
             labelComponent = labelComponent,
             label = { label },
             horizontalLabelPosition = Position.Horizontal.Start,
-            verticalLabelPosition = Position.Vertical.Bottom
+            verticalLabelPosition = if (labelAbove) Position.Vertical.Top else Position.Vertical.Bottom
         )
     }
 }
 
 @Composable
-private fun rememberDailyBedtimeDecorations(
+private fun rememberDailyTimeDecorations(
     domainStartMillis: Long,
     minX: Double,
     maxX: Double,
     userSettings: UserSettings,
+    hour: Int,
+    minute: Int,
     lineColor: Color,
     labelColor: Color,
     icon: Int? = null,
@@ -1056,13 +1275,13 @@ private fun rememberDailyBedtimeDecorations(
     val zoneId = remember(userSettings.timeZoneId) {
         userSettings.resolvedZoneId()
     }
-    val bedtimeXValues = remember(
+    val markerXValues = remember(
         domainStartMillis,
         minX,
         maxX,
         zoneId,
-        userSettings.sleepTimeHour,
-        userSettings.sleepTimeMinute,
+        hour,
+        minute,
     ) {
         val bufferedStartMillis = ChartDataGenerator.domainXToTimestamp(
             domainStartMillis = domainStartMillis,
@@ -1074,22 +1293,22 @@ private fun rememberDailyBedtimeDecorations(
         )
         val startDate = Instant.ofEpochMilli(bufferedStartMillis).atZone(zoneId).toLocalDate().minusDays(1)
         val endDate = Instant.ofEpochMilli(bufferedEndMillis).atZone(zoneId).toLocalDate().plusDays(1)
-        val bedtimeTime = LocalTime.of(userSettings.sleepTimeHour, userSettings.sleepTimeMinute)
+        val markerTime = LocalTime.of(hour, minute)
 
         buildList {
             var date = startDate
             while (!date.isAfter(endDate)) {
-                val bedtimeMillis = ZonedDateTime.of(date, bedtimeTime, zoneId)
+                val markerMillis = ZonedDateTime.of(date, markerTime, zoneId)
                     .withSecond(0)
                     .withNano(0)
                     .toInstant()
                     .toEpochMilli()
-                val bedtimeX = ChartDataGenerator.timestampToDomainX(
+                val markerX = ChartDataGenerator.timestampToDomainX(
                     domainStartMillis = domainStartMillis,
-                    targetTimestampMillis = bedtimeMillis,
+                    targetTimestampMillis = markerMillis,
                 )
-                if (bedtimeX in minX..maxX) {
-                    add(bedtimeX)
+                if (markerX in minX..maxX) {
+                    add(markerX)
                 }
                 date = date.plusDays(1)
             }
@@ -1097,10 +1316,10 @@ private fun rememberDailyBedtimeDecorations(
     }
 
     val decorations = mutableListOf<Decoration>()
-    for (bedtimeX in bedtimeXValues) {
-        key(bedtimeX) {
+    for (markerX in markerXValues) {
+        key(markerX) {
             val decoration = rememberVerticalReferenceLineDecoration(
-                xValue = bedtimeX,
+                xValue = markerX,
                 lineColor = lineColor,
                 labelColor = labelColor,
                 dashed = dashed,
@@ -1220,6 +1439,7 @@ private class ConsumptionImageDecoration(
     private val dotColor: Int,
     private val badgeColor: Int,
     private val textColor: Int,
+    private val overdueColor: Int,
     private val onPositionDrawn: (xValue: Double, center: Offset) -> Unit,
 ) : Decoration {
     private fun CartesianDrawingContext.yToCanvas(yValue: Double): Float {
@@ -1297,8 +1517,12 @@ private class ConsumptionImageDecoration(
                     canvas.nativeCanvas.drawText(emoji, canvasX, imageCenterY - yOff, emojiPaint)
                 }
 
-                strokePaint.color = strokeColor
+                // Past-due, not-yet-taken drinks get a bold red border.
+                val overdue = marker.entries.any { it.overdue }
+                strokePaint.color = if (overdue) overdueColor else strokeColor
+                strokePaint.strokeWidth = if (overdue) 2.5.dp.pixels else 1.5.dp.pixels
                 canvas.nativeCanvas.drawCircle(canvasX, imageCenterY, imageRadius, strokePaint)
+                strokePaint.strokeWidth = 1.5.dp.pixels
 
                 fillPaint.color = dotColor
                 canvas.nativeCanvas.drawCircle(canvasX, canvasY, dotRadius, fillPaint)
@@ -1316,6 +1540,77 @@ private class ConsumptionImageDecoration(
                 }
 
                 onPositionDrawn(marker.xValue, Offset(canvasX, imageCenterY))
+            }
+
+            canvas.nativeCanvas.restore()
+        }
+    }
+}
+
+private class HeadacheMarkerDecoration(
+    private val markers: List<ChartHeadacheMarker>,
+    private val yMin: Double,
+    private val yMax: Double,
+    private val fillColor: Int,
+    private val ringColor: Int,
+    private val onPositionDrawn: (headacheId: Int, center: Offset) -> Unit,
+) : Decoration {
+    private fun CartesianDrawingContext.yToCanvas(yValue: Double): Float {
+        if (yMax <= yMin) return layerBounds.bottom
+        val fraction = ((yValue - yMin) / (yMax - yMin)).coerceIn(0.0, 1.0).toFloat()
+        return layerBounds.bottom - fraction * (layerBounds.bottom - layerBounds.top)
+    }
+
+    private val fillPaint = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply {
+        style = android.graphics.Paint.Style.FILL
+    }
+    private val ringPaint = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply {
+        style = android.graphics.Paint.Style.STROKE
+    }
+    private val emojiPaint = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply {
+        textAlign = android.graphics.Paint.Align.CENTER
+    }
+
+    override fun drawOverLayers(context: CartesianDrawingContext) {
+        with(context) {
+            if (layerDimensions.xSpacing == 0f || ranges.xStep == 0.0) return
+
+            val imageRadius = MarkerImageRadius.pixels
+            val dotRadius = MarkerDotRadius.pixels
+            val gap = MarkerImageGap.pixels
+            ringPaint.strokeWidth = 1.5.dp.pixels
+            emojiPaint.textSize = 13.dp.pixels
+
+            canvas.nativeCanvas.save()
+            canvas.nativeCanvas.clipRect(
+                layerBounds.left,
+                layerBounds.top - imageRadius * 2 - gap,
+                layerBounds.right,
+                layerBounds.bottom + dotRadius * 2,
+            )
+
+            for (marker in markers) {
+                val canvasX = xToCanvas(marker.xValue)
+                if (canvasX < layerBounds.left - imageRadius * 2 || canvasX > layerBounds.right + imageRadius * 2) continue
+
+                // Place headache icons below the curve point so they don't collide
+                // with the drink icons that sit above it.
+                val canvasY = yToCanvas(marker.yValue)
+                val imageCenterY = canvasY + gap + imageRadius
+
+                fillPaint.color = fillColor
+                canvas.nativeCanvas.drawCircle(canvasX, imageCenterY, imageRadius, fillPaint)
+
+                val yOff = (emojiPaint.descent() + emojiPaint.ascent()) / 2f
+                canvas.nativeCanvas.drawText("🤕", canvasX, imageCenterY - yOff, emojiPaint)
+
+                ringPaint.color = ringColor
+                canvas.nativeCanvas.drawCircle(canvasX, imageCenterY, imageRadius, ringPaint)
+
+                fillPaint.color = ringColor
+                canvas.nativeCanvas.drawCircle(canvasX, canvasY, dotRadius, fillPaint)
+
+                onPositionDrawn(marker.headacheId, Offset(canvasX, imageCenterY))
             }
 
             canvas.nativeCanvas.restore()

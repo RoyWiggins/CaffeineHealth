@@ -31,6 +31,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -144,6 +145,14 @@ internal fun CaffeineProfileSettingsScreen(
                         value = stringResource(R.string.profile_sleep_threshold_value, userSettings.sleepThresholdMg),
                         description = stringResource(R.string.profile_sleep_threshold_description),
                     )
+                    if (userSettings.withdrawalThresholdEnabled) {
+                        HorizontalDivider()
+                        ProfileSnapshotMetric(
+                            title = stringResource(R.string.profile_withdrawal_threshold),
+                            value = stringResource(R.string.profile_withdrawal_threshold_value, userSettings.withdrawalThresholdMg),
+                            description = stringResource(R.string.profile_withdrawal_threshold_description),
+                        )
+                    }
                 }
             }
 
@@ -372,6 +381,11 @@ private fun ReAdjustHealthProfileCard(
                         increaseEnabled = userSettings.sleepThresholdMg < 200,
                     )
 
+                    WithdrawalThresholdSection(
+                        userSettings = userSettings,
+                        viewModel = viewModel,
+                    )
+
                     HorizontalDivider()
 
                     Text(
@@ -480,6 +494,80 @@ private fun ReAdjustHealthProfileCard(
                         )
                     }
                 }
+            }
+        }
+    }
+}
+
+@Composable
+private fun WithdrawalThresholdSection(
+    userSettings: UserSettings,
+    viewModel: CaffeineViewModel,
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
+        HorizontalDivider()
+
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Column(
+                modifier = Modifier.weight(1f),
+                verticalArrangement = Arrangement.spacedBy(4.dp),
+            ) {
+                Text(
+                    text = stringResource(R.string.profile_withdrawal_enable),
+                    style = MaterialTheme.typography.titleMedium,
+                )
+                Text(
+                    text = stringResource(R.string.profile_withdrawal_enable_description),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            Switch(
+                checked = userSettings.withdrawalThresholdEnabled,
+                onCheckedChange = { viewModel.updateWithdrawalThresholdEnabled(it) },
+            )
+        }
+
+        AnimatedVisibility(
+            visible = userSettings.withdrawalThresholdEnabled,
+            enter = expandVertically() + fadeIn(),
+            exit = shrinkVertically() + fadeOut(),
+        ) {
+            Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
+                SleepTimePickerCard(
+                    displaySettings = userSettings,
+                    selectedTime = LocalTime.of(
+                        userSettings.wakeTimeHour,
+                        userSettings.wakeTimeMinute,
+                    ),
+                    onSleepTimeChanged = { time ->
+                        viewModel.updateWakeTime(time.hour, time.minute)
+                    },
+                    title = stringResource(R.string.profile_wake_time),
+                    hint = stringResource(R.string.profile_wake_time_hint),
+                )
+
+                ExpressiveStepperCard(
+                    title = stringResource(R.string.profile_withdrawal_threshold),
+                    value = stringResource(
+                        R.string.profile_withdrawal_threshold_value,
+                        userSettings.withdrawalThresholdMg,
+                    ),
+                    supportingText = stringResource(R.string.profile_withdrawal_threshold_supporting),
+                    hint = stringResource(R.string.profile_withdrawal_threshold_hint),
+                    onDecrease = {
+                        viewModel.updateWithdrawalThreshold((userSettings.withdrawalThresholdMg - 5).coerceIn(5, 150))
+                    },
+                    onIncrease = {
+                        viewModel.updateWithdrawalThreshold((userSettings.withdrawalThresholdMg + 5).coerceIn(5, 150))
+                    },
+                    decreaseEnabled = userSettings.withdrawalThresholdMg > 5,
+                    increaseEnabled = userSettings.withdrawalThresholdMg < 150,
+                )
             }
         }
     }

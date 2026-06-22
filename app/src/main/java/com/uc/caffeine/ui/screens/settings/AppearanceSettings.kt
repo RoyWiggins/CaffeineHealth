@@ -25,6 +25,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ShowChart
 import androidx.compose.material.icons.filled.BrightnessAuto
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.DarkMode
@@ -75,6 +76,7 @@ internal fun AppearanceSettingsScreen(
     onThemeModeChange: (ThemeMode) -> Unit,
     onHomeViewModeChange: (HomeViewMode) -> Unit,
     onColorPaletteChange: (AppColorPalette) -> Unit,
+    onChartLogScaleChange: (Boolean) -> Unit,
     onBack: () -> Unit,
 ) {
     val haptics = rememberAppHaptics()
@@ -86,6 +88,10 @@ internal fun AppearanceSettingsScreen(
     val homeViewModes = listOf(
         HomeViewMode.GRAPH to stringResource(R.string.appearance_home_view_graph),
         HomeViewMode.CIRCULAR to stringResource(R.string.appearance_home_view_circular),
+    )
+    val chartScaleModes = listOf(
+        false to stringResource(R.string.appearance_chart_scale_linear),
+        true to stringResource(R.string.appearance_chart_scale_logarithmic),
     )
     val isDark = when (userSettings.themeMode) {
         ThemeMode.SYSTEM -> isSystemInDarkTheme()
@@ -262,6 +268,67 @@ internal fun AppearanceSettingsScreen(
                                         text = label,
                                         style = MaterialTheme.typography.labelMedium,
                                     )
+                                }
+                            }
+                        }
+                    },
+                    shapes = segmentedListItemShapes(index = 0, count = 1),
+                    colors = ListItemDefaults.colors(
+                        containerColor = CaffeineSurfaceDefaults.groupedListContainerColor,
+                    ),
+                )
+            }
+
+            Column(
+                verticalArrangement = Arrangement.spacedBy(6.dp),
+            ) {
+                SegmentedListItem(
+                    onClick = {},
+                    leadingContent = {
+                        Icon(
+                            imageVector = Icons.AutoMirrored.Filled.ShowChart,
+                            contentDescription = null,
+                        )
+                    },
+                    content = {
+                        Text(
+                            text = stringResource(R.string.appearance_chart_scale_label),
+                            style = MaterialTheme.typography.titleMedium,
+                        )
+                    },
+                    supportingContent = {
+                        Column {
+                            Text(
+                                text = stringResource(R.string.appearance_chart_scale_description),
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(top = 8.dp),
+                                horizontalArrangement = Arrangement.spacedBy(ButtonGroupDefaults.ConnectedSpaceBetween),
+                            ) {
+                                chartScaleModes.forEachIndexed { index, (logScale, label) ->
+                                    ToggleButton(
+                                        modifier = Modifier.weight(1f),
+                                        checked = userSettings.chartLogScale == logScale,
+                                        onCheckedChange = { checked ->
+                                            if (checked && userSettings.chartLogScale != logScale) {
+                                                haptics.toggle()
+                                                onChartLogScaleChange(logScale)
+                                            }
+                                        },
+                                        shapes = when (index) {
+                                            0 -> ButtonGroupDefaults.connectedLeadingButtonShapes()
+                                            else -> ButtonGroupDefaults.connectedTrailingButtonShapes()
+                                        },
+                                    ) {
+                                        Text(
+                                            text = label,
+                                            style = MaterialTheme.typography.labelMedium,
+                                        )
+                                    }
                                 }
                             }
                         }

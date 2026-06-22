@@ -16,20 +16,31 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Cancel
 import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.DonutLarge
 import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.ExpandLess
+import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.automirrored.filled.ShowChart
+import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.Sick
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.ButtonGroupDefaults
+import androidx.compose.material3.Button
 import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.BottomSheetDefaults
 import androidx.compose.material3.CardDefaults
@@ -74,12 +85,16 @@ import com.uc.caffeine.R
 import com.uc.caffeine.data.HomeViewMode
 import com.uc.caffeine.data.UserSettings
 import com.uc.caffeine.data.model.ConsumptionEntry
+import com.uc.caffeine.data.model.HeadacheEntry
+import com.uc.caffeine.data.model.HeadacheSeverity
+import com.uc.caffeine.data.model.DrinkPreset
 import com.uc.caffeine.data.model.DrinkUnit
 import com.uc.caffeine.ui.components.CaffeineChart
-import com.uc.caffeine.ui.components.CaffeineCircularView
+import com.uc.caffeine.ui.components.CaffeineRadialView
 import com.uc.caffeine.ui.components.CaffeineScreenScaffold
 import com.uc.caffeine.ui.components.ConsumptionContributionChart
 import com.uc.caffeine.ui.components.ConsumptionTimingSection
+import com.uc.caffeine.ui.components.DateTimePickerDialog
 import com.uc.caffeine.ui.components.DrinkIcon
 import com.uc.caffeine.ui.components.ExpressiveIconBadge
 import com.uc.caffeine.ui.components.RollingNumberText
@@ -89,7 +104,6 @@ import com.uc.caffeine.ui.components.rememberAppHaptics
 import com.uc.caffeine.ui.components.WhatsNewSheet
 import com.uc.caffeine.ui.components.shimmerEffect
 import com.uc.caffeine.ui.theme.CaffeineSurfaceDefaults
-import com.uc.caffeine.ui.viewmodel.CaffeineTrend
 import com.uc.caffeine.ui.viewmodel.CaffeineViewModel
 import com.uc.caffeine.ui.viewmodel.HomeScreenUiEvent
 import com.uc.caffeine.util.ConsumptionContributionDetail
@@ -99,11 +113,14 @@ import com.uc.caffeine.util.formatConsumptionDateHeader
 import com.uc.caffeine.util.formatDurationMinutes
 import com.uc.caffeine.util.formatServingSummary
 import com.uc.caffeine.util.formatTimeOfDay
+import com.uc.caffeine.util.formatTimestampToDateTime
 import com.uc.caffeine.util.formatTimestampToTime
+import com.uc.caffeine.util.HomeTimelineItem
 import com.uc.caffeine.util.resolvedZoneId
 import java.time.LocalDate
 import java.util.Locale
 import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -136,14 +153,26 @@ fun HomeScreen(
     val currentLevel by viewModel.currentCaffeineLevel.collectAsStateWithLifecycle()
     val liveNowMillis by viewModel.liveCurrentTimeMillis.collectAsStateWithLifecycle()
     val bedtimeForecast by viewModel.caffeineAtBedtime.collectAsStateWithLifecycle()
+    val wakeForecast by viewModel.caffeineAtWakeTime.collectAsStateWithLifecycle()
     val chartData by viewModel.chartData.collectAsStateWithLifecycle()
     val isConsumptionEntriesLoading by viewModel.isConsumptionEntriesLoading.collectAsStateWithLifecycle()
     val userSettings by viewModel.userSettings.collectAsStateWithLifecycle()
     val groupedConsumptionEntries by viewModel.groupedConsumptionEntries.collectAsStateWithLifecycle()
+    val homeTimeline by viewModel.homeTimeline.collectAsStateWithLifecycle()
+    val nearTermDoses by viewModel.nearTermDoses.collectAsStateWithLifecycle()
+    val activeDose = remember(nearTermDoses, liveNowMillis) {
+        nearTermDoses.firstOrNull {
+            it.startedAtMillis in (liveNowMillis - 10L * 60 * 1000)..(liveNowMillis + 2L * 60 * 60 * 1000)
+        }
+    }
+    // Collapsed = banner hidden, timer shown as a chip in the top bar. Resets for each new dose.
+    var doseBannerCollapsed by remember(activeDose?.id) { mutableStateOf(false) }
     val showWhatsNew by viewModel.showWhatsNew.collectAsStateWithLifecycle()
-    val caffeineTrend by viewModel.caffeineTrend.collectAsStateWithLifecycle()
+    val radialData by viewModel.radialCaffeineData.collectAsStateWithLifecycle()
 
     var selectedEntry by remember { mutableStateOf<ConsumptionEntry?>(null) }
+    var selectedHeadache by remember { mutableStateOf<HomeTimelineItem.Headache?>(null) }
+    var showReportHeadache by remember { mutableStateOf(false) }
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     val haptics = rememberAppHaptics()
 
@@ -168,7 +197,23 @@ fun HomeScreen(
 
     CaffeineScreenScaffold(
         title = stringResource(R.string.home_title),
+        titleTrailing = {
+            val dose = activeDose
+            if (dose != null && doseBannerCollapsed) {
+                DoseTimerChip(
+                    remainingMillis = dose.startedAtMillis - liveNowMillis,
+                    onClick = { haptics.toggle(); doseBannerCollapsed = false },
+                )
+            }
+        },
         actions = {
+            IconButton(onClick = { haptics.toggle(); showReportHeadache = true }) {
+                Icon(
+                    imageVector = Icons.Filled.Sick,
+                    contentDescription = stringResource(R.string.headache_report_cd),
+                    modifier = Modifier.size(20.dp),
+                )
+            }
             val modes = HomeViewMode.entries
             modes.forEachIndexed { index, mode ->
                 ToggleButton(
@@ -195,6 +240,18 @@ fun HomeScreen(
             }
         }
     ) { bottomPadding ->
+        AnimatedVisibility(visible = activeDose != null && !doseBannerCollapsed) {
+            activeDose?.let { dose ->
+                DoseReminderBanner(
+                    entry = dose,
+                    nowMillis = liveNowMillis,
+                    onMarkTaken = { viewModel.markEntryTaken(dose) },
+                    onCollapse = { doseBannerCollapsed = true },
+                    modifier = Modifier.padding(bottom = 12.dp),
+                )
+            }
+        }
+
         ElevatedCard(
             modifier = Modifier
                 .fillMaxWidth()
@@ -237,18 +294,49 @@ fun HomeScreen(
                                         haptics.navigation()
                                         selectedEntry = entry
                                     }
-                                }
+                                },
+                                onHeadacheClick = { headacheId ->
+                                    val item = homeTimeline.values
+                                        .flatten()
+                                        .filterIsInstance<HomeTimelineItem.Headache>()
+                                        .find { it.entry.id == headacheId }
+                                    if (item != null) {
+                                        haptics.navigation()
+                                        selectedHeadache = item
+                                    }
+                                },
+                                chartYAxisMaxMg = userSettings.chartYAxisMaxMg,
+                                onSetYAxisMax = viewModel::updateChartYAxisMax,
                             )
-                            HomeViewMode.CIRCULAR -> CaffeineCircularView(
-                                currentMg = currentLevel,
-                                maxMg = userSettings.sleepThresholdMg.toDouble(),
-                                trend = caffeineTrend,
+                            HomeViewMode.CIRCULAR -> CaffeineRadialView(
+                                data = radialData,
+                                userSettings = userSettings,
+                                nowMillis = liveNowMillis,
                                 modifier = Modifier.fillMaxSize(),
                             )
                         }
                     }
                 }
             }
+        }
+
+        // Dismissal resets each night (keyed on the upcoming wake time).
+        var withdrawalDismissed by remember(wakeForecast.second) { mutableStateOf(false) }
+        val millisUntilWake = wakeForecast.second - liveNowMillis
+        val withinWakeWindow = millisUntilWake in 0..(10L * 60 * 60 * 1000)
+        val showWithdrawalWarning = userSettings.withdrawalThresholdEnabled &&
+            currentLevel > 0.0 &&
+            wakeForecast.first < userSettings.withdrawalThresholdMg &&
+            withinWakeWindow &&
+            !withdrawalDismissed
+        AnimatedVisibility(visible = showWithdrawalWarning) {
+            WithdrawalForecastCard(
+                caffeineAtWakeMg = wakeForecast.first,
+                wakeTimeMillis = wakeForecast.second,
+                userSettings = userSettings,
+                onDismiss = { withdrawalDismissed = true },
+                modifier = Modifier.padding(top = 16.dp),
+            )
         }
 
         Spacer(modifier = Modifier.height(16.dp))
@@ -285,7 +373,7 @@ fun HomeScreen(
                         }
                     }
                 }
-            } else if (groupedConsumptionEntries.isEmpty()) {
+            } else if (homeTimeline.isEmpty()) {
                 item(key = "history-empty") {
                     Text(
                         text = stringResource(R.string.home_no_consumptions),
@@ -297,7 +385,7 @@ fun HomeScreen(
                     )
                 }
             } else {
-                groupedConsumptionEntries.entries.forEachIndexed { index, (date, entriesForDay) ->
+                homeTimeline.entries.forEachIndexed { index, (date, itemsForDay) ->
                     if (index > 0) {
                         item(
                             key = "history-gap-$date",
@@ -308,44 +396,76 @@ fun HomeScreen(
                     }
 
                     stickyHeader(key = "history-header-$date") {
+                        val dayTotalMg = itemsForDay
+                            .filterIsInstance<HomeTimelineItem.Drink>()
+                            .sumOf { it.entry.caffeineMg }
                         Surface(
                             modifier = Modifier.fillMaxWidth(),
                             color = MaterialTheme.colorScheme.surface
                         ) {
-                            Text(
-                                text = formatTimelineHeaderText(
-                                    date = date,
-                                    settings = userSettings,
-                                    referenceTimeMillis = chartData.currentTimeMillis,
-                                ),
-                                modifier = Modifier.padding(bottom = 8.dp),
-                                style = MaterialTheme.typography.titleMedium,
-                                color = MaterialTheme.colorScheme.primary
-                            )
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(bottom = 8.dp),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                Text(
+                                    text = formatTimelineHeaderText(
+                                        date = date,
+                                        settings = userSettings,
+                                        referenceTimeMillis = chartData.currentTimeMillis,
+                                    ),
+                                    style = MaterialTheme.typography.titleMedium,
+                                    color = MaterialTheme.colorScheme.primary
+                                )
+                                Text(
+                                    text = stringResource(R.string.caffeine_mg, dayTotalMg),
+                                    style = MaterialTheme.typography.titleMedium,
+                                    fontWeight = FontWeight.SemiBold,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                            }
                         }
                     }
 
-                    entriesForDay.forEachIndexed { entryIndex, entry ->
+                    itemsForDay.forEachIndexed { itemIndex, timelineItem ->
                         item(
-                            key = "history-entry-${entry.id}",
+                            key = when (timelineItem) {
+                                is HomeTimelineItem.Drink -> "history-drink-${timelineItem.entry.id}"
+                                is HomeTimelineItem.Headache -> "history-headache-${timelineItem.entry.id}"
+                            },
                             contentType = "history-entry",
                         ) {
-                            ConsumptionHistoryListItem(
-                                entry = entry,
-                                index = entryIndex,
-                                count = entriesForDay.size,
-                                userSettings = userSettings,
-                                onClick = {
-                                    haptics.navigation()
-                                    selectedEntry = entry
-                                },
-                                modifier = Modifier.heightIn(min = 65.dp),
-                            )
+                            when (timelineItem) {
+                                is HomeTimelineItem.Drink -> ConsumptionHistoryListItem(
+                                    entry = timelineItem.entry,
+                                    index = itemIndex,
+                                    count = itemsForDay.size,
+                                    userSettings = userSettings,
+                                    onClick = {
+                                        haptics.navigation()
+                                        selectedEntry = timelineItem.entry
+                                    },
+                                    modifier = Modifier.heightIn(min = 65.dp),
+                                )
+                                is HomeTimelineItem.Headache -> HeadacheHistoryListItem(
+                                    item = timelineItem,
+                                    index = itemIndex,
+                                    count = itemsForDay.size,
+                                    userSettings = userSettings,
+                                    onClick = {
+                                        haptics.navigation()
+                                        selectedHeadache = timelineItem
+                                    },
+                                    modifier = Modifier.heightIn(min = 65.dp),
+                                )
+                            }
                         }
 
-                        if (entryIndex < entriesForDay.lastIndex) {
+                        if (itemIndex < itemsForDay.lastIndex) {
                             item(
-                                key = "history-entry-gap-${entry.id}",
+                                key = "history-item-gap-$date-$itemIndex",
                                 contentType = "history-entry-gap",
                             ) {
                                 Spacer(modifier = Modifier.height(6.dp))
@@ -402,9 +522,10 @@ fun HomeScreen(
                         viewModel = viewModel,
                         userSettings = userSettings,
                         onBack = { isEditing = false },
-                        onSave = { quantity, unit, startedAtMillis, durationMinutes ->
+                        onSave = { newPreset, quantity, unit, startedAtMillis, durationMinutes ->
                             viewModel.updateLoggedEntry(
                                 entry = entry,
+                                newPreset = newPreset,
                                 quantity = quantity,
                                 unit = unit,
                                 startedAtMillis = startedAtMillis,
@@ -420,15 +541,316 @@ fun HomeScreen(
                         userSettings = userSettings,
                         onEdit = { isEditing = true },
                         onDuplicate = { viewModel.duplicateLoggedEntry(entry) },
-                        onDelete = { viewModel.deleteLoggedEntry(entry) }
+                        onDelete = { viewModel.deleteLoggedEntry(entry) },
+                        onMarkTaken = {
+                            viewModel.markEntryTaken(entry)
+                            selectedEntry = null
+                        },
                     )
                 }
             }
         }
     }
 
+    if (showReportHeadache) {
+        ModalBottomSheet(
+            onDismissRequest = { showReportHeadache = false },
+            dragHandle = { BottomSheetDefaults.DragHandle() },
+        ) {
+            ReportHeadacheSheet(
+                userSettings = userSettings,
+                onSubmit = { startedAtMillis, severity, note ->
+                    viewModel.reportHeadache(startedAtMillis, severity, note)
+                    showReportHeadache = false
+                },
+            )
+        }
+    }
+
+    selectedHeadache?.let { headache ->
+        ModalBottomSheet(
+            onDismissRequest = { selectedHeadache = null },
+            dragHandle = { BottomSheetDefaults.DragHandle() },
+        ) {
+            HeadacheDetailSheet(
+                item = headache,
+                userSettings = userSettings,
+                onDelete = {
+                    viewModel.deleteHeadache(headache.entry)
+                    selectedHeadache = null
+                },
+            )
+        }
+    }
+
     if (showWhatsNew) {
         WhatsNewSheet(onDismiss = { viewModel.markWhatsNewSeen() })
+    }
+}
+
+@Composable
+private fun headacheSeverityLabel(severity: HeadacheSeverity): String = when (severity) {
+    HeadacheSeverity.MILD -> stringResource(R.string.headache_severity_mild)
+    HeadacheSeverity.MODERATE -> stringResource(R.string.headache_severity_moderate)
+    HeadacheSeverity.SEVERE -> stringResource(R.string.headache_severity_severe)
+}
+
+@OptIn(ExperimentalMaterial3ExpressiveApi::class)
+@Composable
+private fun HeadacheHistoryListItem(
+    item: HomeTimelineItem.Headache,
+    index: Int,
+    count: Int,
+    userSettings: UserSettings,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    SegmentedListItem(
+        modifier = modifier,
+        onClick = onClick,
+        leadingContent = {
+            ExpressiveIconBadge(
+                index = index,
+                size = 44.dp,
+            ) {
+                Text(
+                    text = "🤕",
+                    style = MaterialTheme.typography.titleLarge,
+                )
+            }
+        },
+        content = {
+            Text(
+                text = stringResource(R.string.headache_title),
+                style = MaterialTheme.typography.bodyLarge,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+        },
+        supportingContent = {
+            val severity = HeadacheSeverity.fromLevel(item.entry.severity)
+            Text(
+                text = stringResource(
+                    R.string.headache_meta,
+                    formatTimestampToTime(item.entry.startedAtMillis, userSettings),
+                    headacheSeverityLabel(severity),
+                ),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+        },
+        trailingContent = {
+            Text(
+                text = stringResource(R.string.caffeine_mg_compact, item.inferredCaffeineMg.toInt()),
+                style = MaterialTheme.typography.titleMedium,
+                color = MaterialTheme.colorScheme.error,
+                fontWeight = FontWeight.Bold,
+            )
+        },
+        shapes = segmentedListItemShapes(index, count),
+        colors = ListItemDefaults.colors(
+            containerColor = CaffeineSurfaceDefaults.groupedListContainerColor,
+        ),
+    )
+}
+
+@Composable
+private fun ReportHeadacheSheet(
+    userSettings: UserSettings,
+    onSubmit: (startedAtMillis: Long, severity: Int, note: String) -> Unit,
+) {
+    val haptics = rememberAppHaptics()
+    var startedAtMillis by remember { mutableStateOf(System.currentTimeMillis()) }
+    var severity by remember { mutableStateOf(HeadacheSeverity.MODERATE) }
+    var note by remember { mutableStateOf("") }
+    var showTimePicker by remember { mutableStateOf(false) }
+
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 20.dp, vertical = 4.dp),
+        verticalArrangement = Arrangement.spacedBy(20.dp),
+    ) {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            Text(text = "🤕", style = MaterialTheme.typography.headlineMedium)
+            Text(
+                text = stringResource(R.string.headache_report_title),
+                style = MaterialTheme.typography.headlineSmall,
+            )
+        }
+
+        HorizontalDivider()
+
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(
+                text = stringResource(R.string.headache_when),
+                style = MaterialTheme.typography.titleMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            OutlinedButton(onClick = { showTimePicker = true }) {
+                Text(formatTimestampToDateTime(startedAtMillis, userSettings))
+            }
+        }
+
+        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text(
+                text = stringResource(R.string.headache_severity),
+                style = MaterialTheme.typography.titleMedium,
+            )
+            val severities = HeadacheSeverity.entries
+            Row(horizontalArrangement = Arrangement.spacedBy(ButtonGroupDefaults.ConnectedSpaceBetween)) {
+                severities.forEachIndexed { index, option ->
+                    ToggleButton(
+                        checked = severity == option,
+                        onCheckedChange = { if (it) { haptics.toggle(); severity = option } },
+                        modifier = Modifier.weight(1f),
+                        shapes = when (index) {
+                            0 -> ButtonGroupDefaults.connectedLeadingButtonShapes()
+                            severities.lastIndex -> ButtonGroupDefaults.connectedTrailingButtonShapes()
+                            else -> ButtonGroupDefaults.connectedMiddleButtonShapes()
+                        },
+                    ) {
+                        Text(
+                            text = headacheSeverityLabel(option),
+                            style = MaterialTheme.typography.labelLarge,
+                        )
+                    }
+                }
+            }
+        }
+
+        OutlinedTextField(
+            value = note,
+            onValueChange = { note = it },
+            label = { Text(stringResource(R.string.headache_note_label)) },
+            modifier = Modifier.fillMaxWidth(),
+        )
+
+        Button(
+            onClick = {
+                haptics.confirm()
+                onSubmit(startedAtMillis, severity.level, note)
+            },
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(56.dp),
+        ) {
+            Text(stringResource(R.string.headache_save))
+        }
+
+        Spacer(Modifier.height(8.dp))
+    }
+
+    if (showTimePicker) {
+        DateTimePickerDialog(
+            currentTimestampMillis = startedAtMillis,
+            settings = userSettings,
+            onDateTimeSelected = {
+                startedAtMillis = it
+                showTimePicker = false
+            },
+            onDismiss = { showTimePicker = false },
+        )
+    }
+}
+
+@Composable
+private fun HeadacheDetailSheet(
+    item: HomeTimelineItem.Headache,
+    userSettings: UserSettings,
+    onDelete: () -> Unit,
+) {
+    val severity = HeadacheSeverity.fromLevel(item.entry.severity)
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 20.dp, vertical = 4.dp),
+        verticalArrangement = Arrangement.spacedBy(16.dp),
+    ) {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            Text(text = "🤕", style = MaterialTheme.typography.headlineMedium)
+            Column {
+                Text(
+                    text = stringResource(R.string.headache_title),
+                    style = MaterialTheme.typography.titleLarge,
+                )
+                Text(
+                    text = formatTimestampToDateTime(item.entry.startedAtMillis, userSettings),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        }
+
+        HorizontalDivider()
+
+        HeadacheDetailRow(
+            label = stringResource(R.string.headache_inferred_caffeine),
+            value = stringResource(R.string.caffeine_mg, item.inferredCaffeineMg.toInt()),
+            valueColor = MaterialTheme.colorScheme.error,
+        )
+        HeadacheDetailRow(
+            label = stringResource(R.string.headache_severity),
+            value = headacheSeverityLabel(severity),
+        )
+        if (item.entry.note.isNotBlank()) {
+            HeadacheDetailRow(
+                label = stringResource(R.string.headache_note_label),
+                value = item.entry.note,
+            )
+        }
+
+        OutlinedButton(
+            onClick = onDelete,
+            modifier = Modifier.fillMaxWidth(),
+        ) {
+            Icon(
+                imageVector = Icons.Filled.Delete,
+                contentDescription = null,
+                modifier = Modifier.size(18.dp),
+            )
+            Spacer(Modifier.size(8.dp))
+            Text(stringResource(R.string.headache_delete))
+        }
+
+        Spacer(Modifier.height(8.dp))
+    }
+}
+
+@Composable
+private fun HeadacheDetailRow(
+    label: String,
+    value: String,
+    valueColor: Color = MaterialTheme.colorScheme.onSurface,
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(
+            text = label,
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        Text(
+            text = value,
+            style = MaterialTheme.typography.titleMedium,
+            color = valueColor,
+            fontWeight = FontWeight.SemiBold,
+        )
     }
 }
 
@@ -468,10 +890,19 @@ private fun ConsumptionHistoryListItem(
             )
         },
         supportingContent = {
+            val meta = buildLoggedEntryMetaText(entry, userSettings)
             Text(
-                text = buildLoggedEntryMetaText(entry, userSettings),
+                text = if (entry.taken) {
+                    meta
+                } else {
+                    stringResource(R.string.home_scheduled_meta, meta)
+                },
                 style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                color = if (entry.taken) {
+                    MaterialTheme.colorScheme.onSurfaceVariant
+                } else {
+                    MaterialTheme.colorScheme.tertiary
+                },
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
@@ -548,6 +979,202 @@ private fun SleepForecastCard(
 }
 
 @Composable
+private fun DoseReminderBanner(
+    entry: ConsumptionEntry,
+    nowMillis: Long,
+    onMarkTaken: () -> Unit,
+    onCollapse: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val remainingMillis = entry.startedAtMillis - nowMillis
+    val overdue = remainingMillis <= 0L
+
+    val container = if (overdue) {
+        MaterialTheme.colorScheme.errorContainer
+    } else {
+        MaterialTheme.colorScheme.primaryContainer
+    }
+    val onContainer = if (overdue) {
+        MaterialTheme.colorScheme.onErrorContainer
+    } else {
+        MaterialTheme.colorScheme.onPrimaryContainer
+    }
+
+    ElevatedCard(
+        onClick = onCollapse,
+        modifier = modifier.fillMaxWidth(),
+        colors = CardDefaults.elevatedCardColors(containerColor = container),
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp, vertical = 12.dp),
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            ExpressiveIconBadge(index = entry.id, size = 40.dp) {
+                DrinkIcon(
+                    imageName = entry.imageName,
+                    emoji = entry.emoji,
+                    contentDescription = entry.drinkName,
+                    modifier = Modifier.size(24.dp),
+                    emojiSize = MaterialTheme.typography.titleMedium.fontSize,
+                )
+            }
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = doseTimerText(remainingMillis),
+                    style = MaterialTheme.typography.titleMedium.copy(
+                        fontWeight = FontWeight.Bold,
+                        // Tabular figures keep the ticking countdown from jittering.
+                        fontFeatureSettings = "tnum",
+                    ),
+                    color = onContainer,
+                    maxLines = 1,
+                    softWrap = false,
+                )
+                Text(
+                    text = doseLabel(entry),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = onContainer.copy(alpha = 0.85f),
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+            Button(onClick = onMarkTaken) {
+                Text(stringResource(R.string.dose_banner_taken))
+            }
+        }
+    }
+}
+
+@Composable
+private fun DoseTimerChip(
+    remainingMillis: Long,
+    onClick: () -> Unit,
+) {
+    val overdue = remainingMillis <= 0L
+    Surface(
+        onClick = onClick,
+        shape = RoundedCornerShape(50),
+        color = if (overdue) MaterialTheme.colorScheme.errorContainer else MaterialTheme.colorScheme.primaryContainer,
+        contentColor = if (overdue) MaterialTheme.colorScheme.onErrorContainer else MaterialTheme.colorScheme.onPrimaryContainer,
+    ) {
+        Text(
+            text = doseTimerText(remainingMillis),
+            modifier = Modifier.padding(horizontal = 12.dp, vertical = 5.dp),
+            style = MaterialTheme.typography.labelLarge.copy(
+                fontWeight = FontWeight.Bold,
+                fontFeatureSettings = "tnum",
+            ),
+            maxLines = 1,
+            softWrap = false,
+        )
+    }
+}
+
+@Composable
+private fun doseLabel(entry: ConsumptionEntry): String =
+    if (entry.quantity >= 2) {
+        stringResource(R.string.dose_label_multi, entry.quantity, entry.drinkName)
+    } else {
+        entry.drinkName
+    }
+
+@Composable
+private fun doseTimerText(remainingMillis: Long): String {
+    if (remainingMillis <= 0L) {
+        val lateMinutes = (-remainingMillis / 60_000L).toInt()
+        return if (lateMinutes < 1) {
+            stringResource(R.string.dose_timer_now)
+        } else {
+            stringResource(R.string.dose_timer_ago, lateMinutes)
+        }
+    }
+    val totalSeconds = remainingMillis / 1000L
+    return if (totalSeconds >= 3600L) {
+        stringResource(R.string.dose_timer_hm, (totalSeconds / 3600L).toInt(), ((totalSeconds % 3600L) / 60L).toInt())
+    } else {
+        stringResource(R.string.dose_timer_ms, (totalSeconds / 60L).toInt(), (totalSeconds % 60L).toInt())
+    }
+}
+
+@Composable
+private fun WithdrawalForecastCard(
+    caffeineAtWakeMg: Double,
+    wakeTimeMillis: Long,
+    userSettings: UserSettings,
+    onDismiss: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    var expanded by remember { mutableStateOf(false) }
+    val contentColor = MaterialTheme.colorScheme.onTertiaryContainer
+
+    ElevatedCard(
+        onClick = { expanded = !expanded },
+        modifier = modifier.fillMaxWidth(),
+        colors = CardDefaults.elevatedCardColors(
+            containerColor = MaterialTheme.colorScheme.tertiaryContainer,
+        ),
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 12.dp, vertical = 6.dp),
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(
+                    imageVector = Icons.Default.Warning,
+                    contentDescription = null,
+                    tint = contentColor,
+                    modifier = Modifier.size(18.dp),
+                )
+                Spacer(modifier = Modifier.width(10.dp))
+                Text(
+                    text = stringResource(R.string.withdrawal_forecast_short),
+                    style = MaterialTheme.typography.labelLarge,
+                    color = contentColor,
+                    modifier = Modifier.weight(1f),
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                Icon(
+                    imageVector = if (expanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
+                    contentDescription = null,
+                    tint = contentColor,
+                    modifier = Modifier.size(20.dp),
+                )
+                IconButton(
+                    onClick = onDismiss,
+                    modifier = Modifier.size(28.dp),
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Close,
+                        contentDescription = stringResource(R.string.action_dismiss),
+                        tint = contentColor,
+                        modifier = Modifier.size(18.dp),
+                    )
+                }
+            }
+
+            AnimatedVisibility(visible = expanded) {
+                Text(
+                    text = stringResource(
+                        R.string.withdrawal_forecast_warning,
+                        formatTimestampToTime(wakeTimeMillis, userSettings),
+                        caffeineAtWakeMg.toInt(),
+                        userSettings.withdrawalThresholdMg,
+                    ),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = contentColor,
+                    modifier = Modifier.padding(start = 28.dp, top = 2.dp, bottom = 6.dp, end = 8.dp),
+                )
+            }
+        }
+    }
+}
+
+@Composable
 private fun ConsumptionLogDetailSheet(
     entry: ConsumptionEntry,
     detail: ConsumptionContributionDetail?,
@@ -555,7 +1182,8 @@ private fun ConsumptionLogDetailSheet(
     userSettings: UserSettings,
     onEdit: () -> Unit,
     onDuplicate: () -> Unit,
-    onDelete: () -> Unit
+    onDelete: () -> Unit,
+    onMarkTaken: () -> Unit,
 ) {
     val haptics = rememberAppHaptics()
     val presentedDetail = detail.takeIf { canRevealDetailContent }
@@ -654,6 +1282,24 @@ private fun ConsumptionLogDetailSheet(
                     detail = targetDetail,
                     userSettings = userSettings,
                 )
+            }
+        }
+
+        if (!entry.taken) {
+            Button(
+                onClick = {
+                    haptics.confirm()
+                    onMarkTaken()
+                },
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                Icon(
+                    imageVector = Icons.Default.CheckCircle,
+                    contentDescription = null,
+                    modifier = Modifier.size(18.dp),
+                )
+                Spacer(modifier = Modifier.width(8.dp))
+                Text(stringResource(R.string.home_action_mark_taken))
             }
         }
 
@@ -940,10 +1586,31 @@ private fun EditConsumptionEntrySheet(
     viewModel: CaffeineViewModel,
     userSettings: UserSettings,
     onBack: () -> Unit,
-    onSave: (Int, DrinkUnit, Long, Int) -> Unit
+    onSave: (DrinkPreset?, Int, DrinkUnit, Long, Int) -> Unit
 ) {
-    val availableUnits by produceState<List<DrinkUnit>?>(initialValue = null, key1 = entry.id, key2 = entry.presetItemId) {
-        value = viewModel.getUnitsForPresetItemId(entry.presetItemId)
+    // null = keep the entry's original drink; non-null = the user picked a new type.
+    var selectedPreset by remember(entry.id) { mutableStateOf<DrinkPreset?>(null) }
+    var pickingDrink by remember(entry.id) { mutableStateOf(false) }
+
+    if (pickingDrink) {
+        DrinkTypePicker(
+            viewModel = viewModel,
+            onSelect = {
+                selectedPreset = it
+                pickingDrink = false
+            },
+            onBack = { pickingDrink = false },
+        )
+        return
+    }
+
+    val displayName = selectedPreset?.name ?: entry.drinkName
+    val displayEmoji = selectedPreset?.emoji ?: entry.emoji
+    val displayImage = selectedPreset?.imageName ?: entry.imageName
+
+    val availableUnits by produceState<List<DrinkUnit>?>(initialValue = null, key1 = entry.id, key2 = selectedPreset?.id) {
+        value = selectedPreset?.let { viewModel.getUnitsForDrink(it.id) }
+            ?: viewModel.getUnitsForPresetItemId(entry.presetItemId)
     }
     var quantity by remember(entry.id) {
         mutableStateOf(entry.quantity.coerceAtLeast(1))
@@ -954,6 +1621,7 @@ private fun EditConsumptionEntrySheet(
     var durationMinutes by remember(entry.id) {
         mutableIntStateOf(entry.normalizedDurationMinutes)
     }
+    // Fallback serving only matters for the original drink when it has no preset units.
     val fallbackUnit = remember(entry) {
         if (entry.unitKey.isBlank()) {
             null
@@ -968,23 +1636,24 @@ private fun EditConsumptionEntrySheet(
             )
         }
     }
-    val initialUnit = remember(availableUnits, entry.unitKey, entry.unitCaffeineMg, fallbackUnit) {
+    val initialUnit = remember(availableUnits, selectedPreset?.id, entry.unitKey, entry.unitCaffeineMg, fallbackUnit) {
         val resolvedUnits = availableUnits.orEmpty()
-        if (resolvedUnits.isEmpty()) {
-            fallbackUnit
-        } else {
-            findMatchingUnit(resolvedUnits, entry.unitKey, entry.unitCaffeineMg)
+        when {
+            // A freshly picked type defaults to that drink's default serving.
+            selectedPreset != null -> resolvedUnits.firstOrNull { it.isDefault } ?: resolvedUnits.firstOrNull()
+            resolvedUnits.isEmpty() -> fallbackUnit
+            else -> findMatchingUnit(resolvedUnits, entry.unitKey, entry.unitCaffeineMg)
         }
     }
-    val displayedUnits = remember(availableUnits, fallbackUnit) {
+    val displayedUnits = remember(availableUnits, selectedPreset?.id, fallbackUnit) {
         val resolvedUnits = availableUnits.orEmpty()
-        if (resolvedUnits.isEmpty()) {
+        if (resolvedUnits.isEmpty() && selectedPreset == null) {
             listOfNotNull(fallbackUnit)
         } else {
             resolvedUnits
         }
     }
-    var selectedUnitKey by remember(entry.id, availableUnits) {
+    var selectedUnitKey by remember(entry.id, selectedPreset?.id, availableUnits) {
         mutableStateOf(initialUnit?.unitKey)
     }
     val selectedUnit = remember(displayedUnits, selectedUnitKey, initialUnit) {
@@ -1017,7 +1686,7 @@ private fun EditConsumptionEntrySheet(
                 )
             }
             Text(
-                text = stringResource(R.string.home_edit_drink, entry.drinkName),
+                text = stringResource(R.string.home_edit_drink, displayName),
                 style = MaterialTheme.typography.titleLarge,
                 modifier = Modifier.weight(1f),
                 maxLines = 1,
@@ -1028,11 +1697,46 @@ private fun EditConsumptionEntrySheet(
                 onClick = {
                     selectedUnit?.let { unit ->
                         haptics.navigation()
-                        onSave(quantity, unit, startedAtMillis, durationMinutes)
+                        onSave(selectedPreset, quantity, unit, startedAtMillis, durationMinutes)
                     }
                 }
             ) {
                 Text(stringResource(R.string.action_save))
+            }
+        }
+
+        // Drink type — tap Change to swap this entry for a different drink.
+        Surface(
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(20.dp),
+            color = MaterialTheme.colorScheme.surfaceContainerHigh,
+        ) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 12.dp, vertical = 10.dp),
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                ExpressiveIconBadge(index = entry.id, size = 40.dp) {
+                    DrinkIcon(
+                        imageName = displayImage,
+                        emoji = displayEmoji,
+                        contentDescription = displayName,
+                        modifier = Modifier.size(24.dp),
+                        emojiSize = MaterialTheme.typography.titleMedium.fontSize,
+                    )
+                }
+                Text(
+                    text = displayName,
+                    style = MaterialTheme.typography.bodyLarge,
+                    modifier = Modifier.weight(1f),
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                TextButton(onClick = { haptics.navigation(); pickingDrink = true }) {
+                    Text(stringResource(R.string.home_edit_change_drink))
+                }
             }
         }
 
@@ -1091,6 +1795,110 @@ private fun EditConsumptionEntrySheet(
         )
 
         Spacer(modifier = Modifier.height(12.dp))
+    }
+}
+
+@Composable
+private fun DrinkTypePicker(
+    viewModel: CaffeineViewModel,
+    onSelect: (DrinkPreset) -> Unit,
+    onBack: () -> Unit,
+) {
+    val haptics = rememberAppHaptics()
+    val presets by viewModel.drinkPresets.collectAsStateWithLifecycle()
+    var query by remember { mutableStateOf("") }
+    val filtered = remember(presets, query) {
+        if (query.isBlank()) {
+            presets
+        } else {
+            presets.filter {
+                it.name.contains(query, ignoreCase = true) || it.brand.contains(query, ignoreCase = true)
+            }
+        }
+    }
+
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 20.dp, vertical = 4.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            FilledTonalIconButton(onClick = { haptics.navigation(); onBack() }) {
+                Icon(
+                    imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                    contentDescription = stringResource(R.string.action_back),
+                )
+            }
+            Text(
+                text = stringResource(R.string.home_edit_choose_drink),
+                style = MaterialTheme.typography.titleLarge,
+                modifier = Modifier.padding(start = 4.dp),
+            )
+        }
+
+        OutlinedTextField(
+            value = query,
+            onValueChange = { query = it },
+            label = { Text(stringResource(R.string.add_search_placeholder)) },
+            leadingIcon = { Icon(Icons.Filled.Search, contentDescription = null) },
+            singleLine = true,
+            modifier = Modifier.fillMaxWidth(),
+        )
+
+        LazyColumn(
+            modifier = Modifier
+                .fillMaxWidth()
+                .heightIn(max = 420.dp),
+            contentPadding = PaddingValues(bottom = 12.dp),
+            verticalArrangement = Arrangement.spacedBy(4.dp),
+        ) {
+            items(filtered, key = { it.id }) { preset ->
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable { haptics.confirm(); onSelect(preset) }
+                        .padding(vertical = 8.dp),
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    ExpressiveIconBadge(index = preset.id, size = 40.dp) {
+                        DrinkIcon(
+                            imageName = preset.imageName,
+                            emoji = preset.emoji,
+                            contentDescription = preset.name,
+                            modifier = Modifier.size(24.dp),
+                            emojiSize = MaterialTheme.typography.titleMedium.fontSize,
+                        )
+                    }
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = preset.name,
+                            style = MaterialTheme.typography.bodyLarge,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                        if (preset.brand.isNotBlank()) {
+                            Text(
+                                text = preset.brand,
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                            )
+                        }
+                    }
+                    Text(
+                        text = stringResource(R.string.caffeine_mg_compact, preset.defaultCaffeineMg),
+                        style = MaterialTheme.typography.titleSmall,
+                        color = MaterialTheme.colorScheme.primary,
+                    )
+                }
+            }
+        }
     }
 }
 

@@ -88,7 +88,7 @@ import androidx.lifecycle.lifecycleScope
 import com.uc.caffeine.LocalSnackbarHostState
 import com.uc.caffeine.R
 import com.uc.caffeine.data.model.ConsumptionEntry
-import com.uc.caffeine.data.model.DEFAULT_CONSUMPTION_DURATION_MINUTES
+import com.uc.caffeine.data.model.defaultConsumptionDurationMinutes
 import com.uc.caffeine.data.model.DrinkPreset
 import com.uc.caffeine.data.model.DrinkUnit
 import com.uc.caffeine.data.model.RecentDrink
@@ -122,6 +122,8 @@ import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.togetherWith
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.Star
+import androidx.compose.material.icons.outlined.StarBorder
 import androidx.compose.material3.IconButton
 
 @OptIn(ExperimentalMaterial3ExpressiveApi::class, ExperimentalMaterial3Api::class)
@@ -137,6 +139,7 @@ fun AddScreen(
 
     val groupedDrinks by viewModel.groupedDrinkPresets.collectAsStateWithLifecycle()
     val recentDrinks by viewModel.recentDrinks.collectAsStateWithLifecycle()
+    val favoriteDrinks by viewModel.favoriteDrinks.collectAsStateWithLifecycle()
     val isCatalogLoading by viewModel.isDrinkCatalogLoading.collectAsStateWithLifecycle()
     val selectedFilter by viewModel.selectedCategoryFilter.collectAsStateWithLifecycle()
     val searchQuery by viewModel.searchQuery.collectAsStateWithLifecycle()
@@ -146,6 +149,7 @@ fun AddScreen(
         groupedDrinks.entries.toList()
     }
     val showRecentServings = selectedFilter == null && searchQuery.isBlank() && recentDrinks.isNotEmpty()
+    val showFavorites = selectedFilter == null && searchQuery.isBlank() && favoriteDrinks.isNotEmpty()
     val categories = viewModel.getAvailableCategories()
     val focusManager = LocalFocusManager.current
     val listState = rememberLazyListState()
@@ -285,6 +289,66 @@ fun AddScreen(
         }
 
         Spacer(modifier = Modifier.height(16.dp))
+
+        if (showFavorites) {
+            Text(
+                text = stringResource(R.string.add_favorites),
+                style = MaterialTheme.typography.titleMedium,
+                color = MaterialTheme.colorScheme.primary,
+            )
+
+            Spacer(modifier = Modifier.height(8.dp))
+
+            SegmentedListGroup(
+                items = favoriteDrinks,
+                onItemClick = { favorite ->
+                    haptics.navigation()
+                    selectedDrink = favorite
+                },
+                itemModifier = Modifier.heightIn(min = 65.dp),
+                leadingContent = { favorite ->
+                    ExpressiveIconBadge(
+                        index = favorite.id,
+                        size = 44.dp,
+                    ) {
+                        DrinkIcon(
+                            imageName = favorite.imageName,
+                            emoji = favorite.emoji,
+                            contentDescription = favorite.name,
+                            modifier = Modifier.size(28.dp),
+                            emojiSize = MaterialTheme.typography.titleLarge.fontSize,
+                        )
+                    }
+                },
+                content = { favorite ->
+                    Text(
+                        text = favorite.name,
+                        style = MaterialTheme.typography.bodyLarge,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                },
+                supportingContent = { favorite ->
+                    Text(
+                        text = stringResource(R.string.caffeine_mg_compact, favorite.defaultCaffeineMg),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                },
+                trailingContent = { _ ->
+                    Icon(
+                        imageVector = Icons.Filled.Star,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.size(20.dp),
+                    )
+                },
+            )
+
+            Spacer(modifier = Modifier.height(16.dp))
+        }
 
         if (showRecentServings) {
             Text(
@@ -469,11 +533,17 @@ fun AddScreen(
                         onDone = { selectedDrink = null },
                     )
                 } else {
+                    val drinkIsFavorite = favoriteDrinks.any { it.id == drink.id }
                     AddDrinkServingSheet(
                         preset = drink,
                         viewModel = viewModel,
                         userSettings = userSettings,
                         todayEntries = todayEntries,
+                        isFavorite = drinkIsFavorite,
+                        onToggleFavorite = {
+                            haptics.toggle()
+                            viewModel.setFavorite(drink.id, !drinkIsFavorite)
+                        },
                         onAdd = { quantity, unit, startedAtMillis, durationMinutes ->
                             haptics.confirm()
                             viewModel.logDrinkFromAddScreen(
@@ -520,6 +590,8 @@ private fun AddDrinkServingSheet(
     viewModel: CaffeineViewModel,
     userSettings: com.uc.caffeine.data.UserSettings,
     todayEntries: List<ConsumptionEntry>,
+    isFavorite: Boolean,
+    onToggleFavorite: () -> Unit,
     onAdd: (Int, DrinkUnit, Long, Int) -> Unit,
     onEditCustomDrink: (() -> Unit)? = null,
 ) {
@@ -530,7 +602,7 @@ private fun AddDrinkServingSheet(
     var quantity by remember(preset.id) { mutableIntStateOf(1) }
     var startedAtMillis by remember(preset.id) { mutableStateOf(System.currentTimeMillis()) }
     var durationMinutes by remember(preset.id) {
-        mutableIntStateOf(DEFAULT_CONSUMPTION_DURATION_MINUTES)
+        mutableIntStateOf(defaultConsumptionDurationMinutes(preset.category))
     }
     val defaultUnit = remember(units) {
         units?.firstOrNull { it.isDefault } ?: units?.firstOrNull()
@@ -585,6 +657,20 @@ private fun AddDrinkServingSheet(
                 Text(
                     text = preset.name,
                     style = MaterialTheme.typography.headlineSmall,
+                )
+            }
+
+            IconButton(onClick = onToggleFavorite) {
+                Icon(
+                    imageVector = if (isFavorite) Icons.Filled.Star else Icons.Outlined.StarBorder,
+                    contentDescription = stringResource(
+                        if (isFavorite) R.string.favorite_remove_cd else R.string.favorite_add_cd
+                    ),
+                    tint = if (isFavorite) {
+                        MaterialTheme.colorScheme.primary
+                    } else {
+                        MaterialTheme.colorScheme.onSurfaceVariant
+                    },
                 )
             }
         }
@@ -913,6 +999,7 @@ private fun CreateCustomDrinkSheet(
     var selectedCategory by remember { mutableStateOf("coffee") }
     var selectedUnitKey by remember { mutableStateOf("cup") }
     var caffeineText by remember { mutableStateOf("") }
+    var delayText by remember { mutableStateOf("") }
 
     val pickImage = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
         if (uri != null) {
@@ -924,6 +1011,7 @@ private fun CreateCustomDrinkSheet(
     }
 
     val caffeineValue = caffeineText.toDoubleOrNull()
+    val delayMinutes = delayText.toIntOrNull()?.coerceAtLeast(0) ?: 0
     val isValid = name.isNotBlank() && caffeineValue != null && caffeineValue > 0
 
     val categoryKeys = CategoryUtils.getCategoryOrder()
@@ -1080,6 +1168,13 @@ private fun CreateCustomDrinkSheet(
             )
         }
 
+        HorizontalDivider()
+
+        ReleaseDelayField(
+            delayText = delayText,
+            onDelayTextChange = { delayText = it },
+        )
+
         Button(
             onClick = {
                 val caffeine = caffeineValue ?: return@Button
@@ -1091,6 +1186,7 @@ private fun CreateCustomDrinkSheet(
                     category = selectedCategory,
                     unitKey = selectedUnitKey,
                     caffeineMg = caffeine,
+                    delayMinutes = delayMinutes,
                 )
                 onDismiss()
             },
@@ -1135,6 +1231,9 @@ private fun EditCustomDrinkSheet(
             }
         )
     }
+    var delayText by remember(preset.id) {
+        mutableStateOf(if (preset.delayMinutes > 0) preset.delayMinutes.toString() else "")
+    }
 
     val pickImage = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
         if (uri != null) {
@@ -1146,6 +1245,7 @@ private fun EditCustomDrinkSheet(
     }
 
     val caffeineValue = caffeineText.toDoubleOrNull()
+    val delayMinutes = delayText.toIntOrNull()?.coerceAtLeast(0) ?: 0
     val isValid = name.isNotBlank() && caffeineValue != null && caffeineValue > 0
 
     val categoryKeys = CategoryUtils.getCategoryOrder()
@@ -1191,6 +1291,7 @@ private fun EditCustomDrinkSheet(
                         category = selectedCategory,
                         unitKey = selectedUnitKey,
                         caffeineMg = caffeine,
+                        delayMinutes = delayMinutes,
                     )
                     onDone()
                 }
@@ -1331,7 +1432,41 @@ private fun EditCustomDrinkSheet(
             )
         }
 
+        HorizontalDivider()
+
+        ReleaseDelayField(
+            delayText = delayText,
+            onDelayTextChange = { delayText = it },
+        )
+
         Spacer(Modifier.height(8.dp))
+    }
+}
+
+@Composable
+private fun ReleaseDelayField(
+    delayText: String,
+    onDelayTextChange: (String) -> Unit,
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Text(
+            text = stringResource(R.string.custom_drink_release_delay),
+            style = MaterialTheme.typography.titleMedium,
+        )
+        Text(
+            text = stringResource(R.string.custom_drink_release_delay_description),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        OutlinedTextField(
+            value = delayText,
+            onValueChange = { onDelayTextChange(it.filter { c -> c.isDigit() }) },
+            label = { Text(stringResource(R.string.custom_drink_release_delay_label)) },
+            suffix = { Text(stringResource(R.string.custom_drink_release_delay_suffix)) },
+            singleLine = true,
+            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+            modifier = Modifier.fillMaxWidth(),
+        )
     }
 }
 

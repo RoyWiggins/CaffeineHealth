@@ -78,6 +78,9 @@
     <string name="profile_sleep_threshold">Sleep threshold</string>
     <string name="profile_sleep_threshold_value">%1$d mg</string>
     <string name="profile_sleep_threshold_description">The active-caffeine target the sleep guidance compares against.</string>
+    <string name="profile_withdrawal_threshold">Withdrawal threshold</string>
+    <string name="profile_withdrawal_threshold_value">%1$d mg</string>
+    <string name="profile_withdrawal_threshold_description">Warns you if your caffeine is likely to drop below this before your wake-up time.</string>
 
     <!-- Caffeine profile re-adjust card -->
     <string name="profile_re_adjust_title">Re-Adjust Caffeine Health Profile</string>
@@ -91,6 +94,12 @@
     <string name="profile_caffeine_half_life_hint">Adjust in 1-hour steps</string>
     <string name="profile_sleep_threshold_supporting">Keep this lower if caffeine affects your sleep easily, higher if your usual cutoff is more forgiving.</string>
     <string name="profile_sleep_threshold_hint">Adjust in 5 mg steps</string>
+    <string name="profile_withdrawal_enable">Withdrawal warning</string>
+    <string name="profile_withdrawal_enable_description">Warns you if your caffeine is set to bottom out before you wake up — handy if low morning caffeine gives you withdrawal headaches.</string>
+    <string name="profile_wake_time">Wake-up time</string>
+    <string name="profile_wake_time_hint">Used to project your morning caffeine level.</string>
+    <string name="profile_withdrawal_threshold_supporting">The active-caffeine level you want to still have on board when you wake up.</string>
+    <string name="profile_withdrawal_threshold_hint">Adjust in 5 mg steps</string>
     <string name="profile_health_section">Health Profile</string>
     <string name="profile_age_range">Age range</string>
     <string name="profile_age_range_description">Caffeine may linger longer for older adults.</string>
@@ -188,15 +197,26 @@
     <string name="home_my_consumptions">My Consumptions</string>
     <string name="home_no_consumptions">No consumptions logged yet</string>
     <string name="home_started_meta">Started %1$s</string>
+    <string name="home_scheduled_meta">Scheduled • %1$s</string>
     <string name="home_action_edit">Edit</string>
     <string name="home_action_duplicate">Duplicate</string>
     <string name="home_action_delete">Delete</string>
+    <string name="home_action_mark_taken">Mark as taken</string>
+    <string name="entry_marked_taken">Marked %1$s as taken</string>
+    <string name="dose_timer_hm">%1$dh %2$dm</string>
+    <string name="dose_timer_ms">%1$d:%2$02d</string>
+    <string name="dose_timer_now">now</string>
+    <string name="dose_timer_ago">%1$d min ago</string>
+    <string name="dose_label_multi">%1$d × %2$s</string>
+    <string name="dose_banner_taken">Taken</string>
     <string name="home_adds_now">Adds %1$s now</string>
     <string name="home_drink_contribution_title">Drink contribution to caffeine levels</string>
     <string name="home_at_peak">At peak (%1$s)</string>
     <string name="home_now">Now</string>
     <string name="home_in_total_over_time">In total (over time)</string>
     <string name="home_edit_drink">Edit %1$s</string>
+    <string name="home_edit_change_drink">Change</string>
+    <string name="home_edit_choose_drink">Choose a drink</string>
     <string name="home_serving">Serving</string>
     <string name="home_serving_unavailable">Serving options are unavailable for this entry.</string>
 
@@ -206,6 +226,29 @@
     <string name="sleep_forecast_may_affect">May affect sleep (%1$dmg at bedtime)</string>
     <string name="sleep_forecast_disruption">Sleep disruption likely (%1$dmg)</string>
 
+    <!-- Withdrawal forecast (HomeScreen card) -->
+    <string name="withdrawal_forecast_title">Morning withdrawal</string>
+    <string name="withdrawal_forecast_short">Morning withdrawal likely</string>
+    <string name="action_dismiss">Dismiss</string>
+    <string name="withdrawal_forecast_warning">By %1$s your caffeine is set to drop to ~%2$d mg — below your %3$d mg withdrawal threshold. You may wake up in withdrawal.</string>
+
+    <!-- Headache tracking -->
+    <string name="headache_title">Headache</string>
+    <string name="headache_report_cd">Report a headache</string>
+    <string name="headache_report_title">Report a headache</string>
+    <string name="headache_when">When</string>
+    <string name="headache_severity">Severity</string>
+    <string name="headache_severity_mild">Mild</string>
+    <string name="headache_severity_moderate">Moderate</string>
+    <string name="headache_severity_severe">Severe</string>
+    <string name="headache_note_label">Note (optional)</string>
+    <string name="headache_save">Save headache</string>
+    <string name="headache_delete">Delete headache</string>
+    <string name="headache_inferred_caffeine">Caffeine at that time</string>
+    <string name="headache_meta">%1$s · %2$s</string>
+    <string name="headache_logged_toast">Headache logged</string>
+    <string name="headache_deleted_toast">Headache deleted</string>
+
     <!-- Add screen -->
     <string name="add_title">Add a drink</string>
     <string name="add_create_custom_cd">Create custom drink</string>
@@ -214,6 +257,9 @@
     <string name="add_clear_search_cd">Clear search</string>
     <string name="add_filter_all">All</string>
     <string name="add_recent_servings">Recent servings</string>
+    <string name="add_favorites">Favorites</string>
+    <string name="favorite_add_cd">Add to favorites</string>
+    <string name="favorite_remove_cd">Remove from favorites</string>
     <string name="add_logged_toast">Logged %1$s</string>
     <string name="add_log_serving_of">Log %1$s of</string>
     <string name="add_no_serving_options">No serving options are available for this drink yet.</string>
@@ -244,6 +290,10 @@
     <string name="custom_drink_serving_unit">Serving unit</string>
     <string name="custom_drink_caffeine_per_serving">Caffeine per serving</string>
     <string name="custom_drink_amount_label">Amount</string>
+    <string name="custom_drink_release_delay">Release delay</string>
+    <string name="custom_drink_release_delay_description">For delayed-release pills that only reach your bloodstream a while after you take them. Leave at 0 for ordinary drinks.</string>
+    <string name="custom_drink_release_delay_label">Delay</string>
+    <string name="custom_drink_release_delay_suffix">min</string>
     <string name="custom_drink_save">Save custom drink</string>
     <string name="custom_drink_edit_button">Edit custom drink</string>
 
@@ -261,6 +311,8 @@
     <string name="notification_channel_daily_description">Daily caffeine logging reminders</string>
     <string name="notification_channel_inactivity">Inactivity Reminders</string>
     <string name="notification_channel_inactivity_description">Reminder when you haven\'t logged caffeine in a while</string>
+    <string name="notification_channel_drink_reminder">Scheduled Drinks</string>
+    <string name="notification_channel_drink_reminder_description">Reminders to take drinks you scheduled for a future time</string>
 
     <!-- Notification messages -->
     <string name="notification_daily_title">Caffeine Check-in</string>
@@ -269,6 +321,12 @@
     <string name="notification_daily_evening">Time to log your evening caffeine. Get accurate bedtime predictions.</string>
     <string name="notification_inactivity_title">Miss your caffeine log?</string>
     <string name="notification_inactivity_body">It has been 5 days since you logged. Open the app to keep your tracker accurate.</string>
+    <string name="notification_drink_reminder_title">Time to take it</string>
+    <string name="notification_drink_reminder_body">%1$s is scheduled for now.</string>
+    <string name="notification_drink_reminder_body_qty">%1$d × %2$s is scheduled for now.</string>
+    <string name="notification_drink_reminder_body_generic">Your scheduled drink is due now.</string>
+    <string name="notification_action_mark_taken">Mark taken</string>
+    <string name="notification_action_dismiss">Dismiss</string>
 
     <!-- Widgets (in-content text) -->
     <string name="widget_caffeine_now_inline_label">Caffeine Now</string>
@@ -281,6 +339,13 @@
     <string name="analytics_caffeine_by_source_summary">Where your caffeine came from over this period.</string>
     <string name="analytics_bedtime_impact">Bedtime impact</string>
     <string name="analytics_bedtime_impact_summary">How much caffeine is still active by the time you sleep.</string>
+    <string name="analytics_last_7_days_title">Last 7 days</string>
+    <string name="analytics_last_7_days_legend">Bars: total intake · Line: daily low</string>
+    <string name="analytics_withdrawal_impact">Withdrawal impact</string>
+    <string name="analytics_withdrawal_impact_summary">Daily caffeine lows, threshold dips, and headaches.</string>
+    <string name="analytics_withdrawal_threshold_label">Withdrawal threshold: %1$d mg</string>
+    <string name="analytics_withdrawal_disabled">Withdrawal warning is off — turn it on in your Caffeine Profile to flag low days.</string>
+    <string name="analytics_withdrawal_summary">%1$d days below threshold · %2$d days with a headache</string>
     <string name="analytics_bedtime_card_supporting">Average caffeine still active by bedtime for each period.</string>
     <string name="analytics_bedtime_calendar_prev_month">Previous month</string>
     <string name="analytics_bedtime_calendar_next_month">Next month</string>
@@ -495,6 +560,12 @@
     <string name="whats_new_analytics_body">Bedtime Impact now shows a full monthly calendar with streaks. When You Drink has cleaner bar charts with time-range filtering.</string>
     <string name="whats_new_languages_title">14 New Languages</string>
     <string name="whats_new_languages_body">Danish, Dutch, Finnish, French, German, Icelandic, Kannada, Malayalam, Norwegian, Portuguese, Spanish, Swedish, Tamil, and Telugu are now supported.</string>
+    <string name="whats_new_headache_title">Headache Tracking</string>
+    <string name="whats_new_headache_body">Report headaches and see them on the caffeine chart and in your timeline, each tagged with the caffeine level inferred at that moment.</string>
+    <string name="whats_new_withdrawal_title">Withdrawal Warning</string>
+    <string name="whats_new_withdrawal_body">Set a withdrawal threshold and wake-up time, and get warned when your caffeine is set to bottom out before morning.</string>
+    <string name="whats_new_delay_title">Delayed-Release Drinks</string>
+    <string name="whats_new_delay_body">Custom drinks can now have a release delay, so timed-release caffeine pills enter your bloodstream at the right time.</string>
     <string name="whats_new_fixes_title">Fixes and Polish</string>
     <string name="whats_new_fixes_body">Health Connect sync is more reliable, with a handful of smaller refinements across the app.</string>
 
@@ -517,6 +588,10 @@
     <string name="appearance_home_view_summary">Choose how caffeine is shown on the home screen</string>
     <string name="appearance_home_view_graph">Graph</string>
     <string name="appearance_home_view_circular">Circular</string>
+    <string name="appearance_chart_scale_label">Chart Y-axis scale</string>
+    <string name="appearance_chart_scale_description">Logarithmic makes small residual caffeine levels easier to read.</string>
+    <string name="appearance_chart_scale_linear">Linear</string>
+    <string name="appearance_chart_scale_logarithmic">Logarithmic</string>
     <string name="appearance_color_palette_label">Color palette</string>
     <string name="appearance_color_palette_dynamic">Dynamic</string>
     <string name="appearance_color_palette_espresso">Espresso</string>
@@ -528,6 +603,10 @@
     <string name="home_circular_view_cd">Caffeine progress indicator</string>
     <string name="home_circular_mg_unit">mg</string>
     <string name="home_circular_threshold_format">of %1$d mg</string>
+    <string name="home_radial_empty">No caffeine logged in the last 7 days</string>
+    <string name="chart_y_axis_auto">Auto</string>
+    <string name="chart_y_axis_raise_cd">Raise chart maximum</string>
+    <string name="chart_y_axis_lower_cd">Lower chart maximum</string>
     <string name="home_view_toggle_to_circular_cd">Switch to circular view</string>
     <string name="home_view_toggle_to_graph_cd">Switch to graph view</string>
 </resources>
