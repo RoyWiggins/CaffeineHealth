@@ -277,12 +277,17 @@ fun CaffeineChart(
     // The axis is plotted in "axis space" (identity for linear, floor-relative
     // log10 for log). All Y positions — the line series, range, ticks, threshold
     // lines, and marker placement — must be in this same space to stay aligned.
+    // Both values are kept strictly positive: a manual cap below the log floor
+    // (or any other degenerate input) would otherwise collapse the range to 0 and
+    // crash the axis tick-placer (division by zero).
     val axisMaxY = remember(yAxisMax, logScale, logFloor) {
-        if (logScale) caffeineToAxisSpace(yAxisMax, true, logFloor) else yAxisMax
+        val raw = if (logScale) caffeineToAxisSpace(yAxisMax, true, logFloor) else yAxisMax
+        raw.coerceAtLeast(if (logScale) 0.1 else 1.0)
     }
     // Linear: nice round gridline step. Log: even split of the log range.
     val axisStepY = remember(axisMaxY, yAxisMax, logScale) {
-        if (logScale) axisMaxY / (VERTICAL_AXIS_LABEL_COUNT - 1) else niceAxisStepMg(yAxisMax)
+        val step = if (logScale) axisMaxY / (VERTICAL_AXIS_LABEL_COUNT - 1) else niceAxisStepMg(yAxisMax)
+        step.coerceAtLeast(0.001)
     }
 
     val dataMinX = remember(displaySeries.xValues) {
