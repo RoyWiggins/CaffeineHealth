@@ -192,7 +192,8 @@ internal fun axisSpaceToCaffeine(axisValue: Double, logScale: Boolean, floorMg: 
     if (logScale) floorMg * (10.0).pow(axisValue) else axisValue
 
 // "Nice" Y-axis caps the zoom controls step through; 0 (auto) sits above the top.
-internal val YAxisMaxLadderMg = listOf(50, 100, 150, 200, 300, 400, 500, 750, 1000, 1500, 2000)
+// Finer at the low end for taper monitoring, topping out at a realistic 500 mg.
+internal val YAxisMaxLadderMg = listOf(25, 50, 75, 100, 150, 200, 300, 400, 500)
 
 /** The next manual Y-axis cap (mg) when stepping the chart zoom; 0 means auto. */
 internal fun nextYAxisMaxMg(currentMg: Int, autoMaxMg: Int, zoomIn: Boolean): Int {

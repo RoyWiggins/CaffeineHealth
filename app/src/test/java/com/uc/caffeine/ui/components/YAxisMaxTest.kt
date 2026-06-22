@@ -13,23 +13,23 @@ class YAxisMaxTest {
 
     @Test
     fun zoomIn_steppingDownTheLadder() {
-        assertEquals(50, nextYAxisMaxMg(currentMg = 100, autoMaxMg = 400, zoomIn = true))
+        assertEquals(75, nextYAxisMaxMg(currentMg = 100, autoMaxMg = 400, zoomIn = true))
     }
 
     @Test
     fun zoomIn_clampsAtTheLowestRung() {
-        assertEquals(50, nextYAxisMaxMg(currentMg = 50, autoMaxMg = 400, zoomIn = true))
+        assertEquals(25, nextYAxisMaxMg(currentMg = 25, autoMaxMg = 400, zoomIn = true))
     }
 
     @Test
     fun zoomOut_steppingUpTheLadder() {
         assertEquals(150, nextYAxisMaxMg(currentMg = 100, autoMaxMg = 400, zoomIn = false))
-        assertEquals(1500, nextYAxisMaxMg(currentMg = 1000, autoMaxMg = 400, zoomIn = false))
+        assertEquals(500, nextYAxisMaxMg(currentMg = 400, autoMaxMg = 400, zoomIn = false))
     }
 
     @Test
     fun zoomOut_pastTheTop_returnsAuto() {
-        assertEquals(0, nextYAxisMaxMg(currentMg = 2000, autoMaxMg = 400, zoomIn = false))
+        assertEquals(0, nextYAxisMaxMg(currentMg = 500, autoMaxMg = 400, zoomIn = false))
     }
 
     @Test
